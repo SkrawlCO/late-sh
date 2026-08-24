@@ -1626,9 +1626,12 @@ impl App {
         if self.lateania_state.is_some() {
             return;
         }
+        let player_name = self.effective_player_name().to_string();
+
         self.lateania_state = Some(crate::app::door::lateania::state::State::new(
             self.lateania_service.clone(),
             self.user_id,
+            player_name,
         ));
     }
 

@@ -144,6 +144,11 @@ pub enum MapMode {
 
 pub struct State {
     user_id: Uuid,
+    /// Session-scoped player-facing identity.
+    ///
+    /// BBS-launched sessions may use the upstream BBS display name here.
+    /// Character ownership and persistence remain keyed by `user_id`.
+    player_name: String,
     session_id: Uuid,
     snapshot: MudSnapshot,
     svc: LateaniaService,
@@ -200,7 +205,16 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(svc: LateaniaService, user_id: Uuid) -> Self {
+    /// Player-facing identity for this Lateania session.
+    ///
+    /// This is deliberately separate from character persistence so players
+    /// remain free to use an RPG character identity distinct from their BBS
+    /// or late.sh account name.
+    pub fn player_name(&self) -> &str {
+        &self.player_name
+    }
+
+    pub fn new(svc: LateaniaService, user_id: Uuid, player_name: String) -> Self {
         let session_id = Uuid::now_v7();
         let join_requested_at = Instant::now();
         let snapshot_rx = svc.subscribe_state();
@@ -212,6 +226,7 @@ impl State {
             .unwrap_or_default();
         let state = Self {
             user_id,
+            player_name,
             session_id,
             snapshot,
             svc,
