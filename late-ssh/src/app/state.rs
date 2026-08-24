@@ -1669,12 +1669,15 @@ impl App {
             return;
         }
 
-        let player_name = self.effective_player_name().to_string();
+        let context = crate::app::door::context::DoorContext {
+            user_id: self.user_id,
+            player_name: self.effective_player_name().to_string(),
+            session_origin: self.session_origin(),
+        };
 
         self.greendragon_state = Some(crate::app::door::greendragon::state::State::new(
             self.greendragon_service.clone(),
-            self.user_id,
-            player_name,
+            context,
         ));
     }
 
