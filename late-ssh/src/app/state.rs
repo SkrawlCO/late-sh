@@ -1694,9 +1694,15 @@ impl App {
         // not when the door was opened.
         let session_start = chrono::Utc::now()
             - chrono::Duration::from_std(self.started_at.elapsed()).unwrap_or_default();
+        let context = crate::app::door::context::DoorContext {
+            user_id: self.user_id,
+            player_name: self.effective_player_name().to_string(),
+            session_origin: self.session_origin(),
+        };
+
         self.darkroom_state = Some(crate::app::door::darkroom::state::State::new(
             self.darkroom_service.clone(),
-            self.user_id,
+            context,
             session_start,
         ));
     }

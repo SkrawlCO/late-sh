@@ -15,6 +15,8 @@ use chrono::{DateTime, Utc};
 use tokio::sync::watch;
 use uuid::Uuid;
 
+use crate::app::door::context::DoorContext;
+
 use late_core::models::profile_award::{
     DARKROOM_BEACON_AWARD_CATEGORY, DARKROOM_ESCAPE_AWARD_CATEGORY,
 };
@@ -260,7 +262,12 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(svc: DarkroomService, user_id: Uuid, session_start: DateTime<Utc>) -> Self {
+    pub fn new(
+        svc: DarkroomService,
+        context: DoorContext,
+        session_start: DateTime<Utc>,
+    ) -> Self {
+        let user_id = context.user_id;
         let load = svc.load_game(user_id);
         let mut rng = rand::thread_rng();
         Self {
