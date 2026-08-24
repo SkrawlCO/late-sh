@@ -17,6 +17,7 @@ pub mod audio_ban;
 pub mod bashquest_graduate;
 #[cfg(test)]
 mod bashquest_graduate_test;
+pub mod bbs_identity_link;
 pub mod blackjack;
 pub mod bonsai;
 pub mod bonsai_decay_protection;

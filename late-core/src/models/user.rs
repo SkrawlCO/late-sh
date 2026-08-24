@@ -537,6 +537,13 @@ impl User {
         Ok(rows.into_iter().map(Self::from).collect())
     }
 
+    pub async fn find_by_id(client: &Client, user_id: Uuid) -> Result<Option<Self>> {
+        let row = client
+            .query_opt("SELECT * FROM users WHERE id = $1", &[&user_id])
+            .await?;
+        Ok(row.map(Self::from))
+    }
+
     pub async fn delete_by_id(client: &Client, user_id: Uuid) -> Result<u64> {
         let deleted = client
             .execute("DELETE FROM users WHERE id = $1", &[&user_id])

@@ -147,6 +147,15 @@ struct ClientHandler {
     terminal_env_hints: Vec<(String, String)>,
     /// Optional direct-launch target supplied by an SSH environment request.
     launch_target: Option<String>,
+
+    /// PTY parameters are recorded first and consumed when the interactive
+    /// shell starts. This intentionally separates terminal negotiation from
+    /// application bootstrap so upstream BBS SetEnv requests can arrive before
+    /// we choose the canonical application identity.
+    pty_term: Option<String>,
+    pty_cols: Option<u16>,
+    pty_rows: Option<u16>,
+
     /// Optional identity asserted by the upstream BinkTerm BBS session.
     bbs_identity: BbsIdentity,
     session_token: Option<String>,
@@ -353,6 +362,9 @@ impl Server {
             cli_mode: false,
             terminal_env_hints: Vec::new(),
             launch_target: None,
+            pty_term: None,
+            pty_cols: None,
+            pty_rows: None,
             bbs_identity: BbsIdentity::default(),
             session_token: None,
             session_rx: None,
@@ -526,6 +538,339 @@ impl ClientHandler {
             }
             _ => unreachable!("launch target was validated in env_request"),
         }
+    }
+
+    async fn bootstrap_app(&mut self, term: &str, cols: u16, rows: u16) -> Result<()> {
+        let session_token = self.ensure_cli_session().await?;
+        self.track_active_session_token(&session_token);
+        let session_rx = self
+            .session_rx
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("cli session receiver missing during shell request"))?;
+
+        let article_service = self.state.article_service.clone();
+        let chat_service = self.state.chat_service.clone();
+        let profile_service = self.state.profile_service.clone();
+        let twenty_forty_eight_service = self.state.twenty_forty_eight_service.clone();
+        let le_word_service = self.state.le_word_service.clone();
+        let sudoku_service = self.state.sudoku_service.clone();
+        let nonogram_service = self.state.nonogram_service.clone();
+        let solitaire_service = self.state.solitaire_service.clone();
+        let nonogram_library = self.state.nonogram_library.clone();
+
+        let user = match self.user.as_ref() {
+            Some(user) => user,
+            None => {
+                tracing::error!("shell request without authenticated user");
+                return Err(anyhow::anyhow!("unauthenticated shell request"));
+            }
+        };
+
+        let user_id = user.id;
+        let permissions = AuthzPermissions::new(
+            user.is_admin || self.state.config.force_admin,
+            user.is_moderator,
+        );
+
+        let ArcadeSessionPreloads {
+            initial_2048_game,
+            initial_2048_high_score,
+            initial_tetris_game,
+            initial_tetris_high_score,
+            initial_snake_game,
+            initial_snake_high_score,
+            initial_traffic_track_scores,
+            initial_traffic_high_score,
+            initial_le_word_daily_word,
+            initial_le_word_game,
+            initial_rubiks_cube_game,
+            initial_sudoku_games,
+            initial_nonogram_games,
+            initial_solitaire_games,
+            initial_minesweeper_games,
+        } = load_arcade_session_preloads(&self.state, user_id).await;
+        let (initial_bonsai_tree, initial_bonsai_care, initial_bonsai_decay_protection) = match self
+            .state
+            .bonsai_service
+            .ensure_tree_with_care(user_id)
+            .await
+        {
+            Ok((tree, care, protection)) => (Some(tree), Some(care), protection),
+            Err(e) => {
+                tracing::warn!(error = ?e, "failed to load/create bonsai tree");
+                (None, None, None)
+            }
+        };
+        let shop_snapshot_rx = self.state.shop_service.subscribe_snapshot(user_id);
+        let shop_snapshot = match self.state.shop_service.refresh_user(user_id).await {
+            Ok(snapshot) => Some(snapshot),
+            Err(e) => {
+                tracing::warn!(error = ?e, "failed to refresh shop snapshot");
+                None
+            }
+        };
+        let initial_bonsai_v2_tree = if shop_snapshot
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.entitlements.has_dynamic_bonsai())
+        {
+            match self
+                .state
+                .bonsai_service
+                .ensure_v2_tree(user_id, initial_bonsai_tree.as_ref())
+                .await
+            {
+                Ok(tree) => Some(tree),
+                Err(e) => {
+                    tracing::warn!(error = ?e, "failed to load/create bonsai v2 tree");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let initial_pet = match self.state.pet_service.ensure_cat(user_id).await {
+            Ok(cat) => Some(cat),
+            Err(e) => {
+                tracing::warn!(error = ?e, "failed to load/create cat companion");
+                None
+            }
+        };
+
+        // Ensure the user's chip balance row exists.
+        let initial_chip_balance = match self.state.chip_service.ensure_chips(user_id).await {
+            Ok(chips) => chips.balance,
+            Err(e) => {
+                tracing::warn!(error = ?e, "failed to ensure chip balance");
+                0
+            }
+        };
+        let quest_snapshot_rx = self.state.quest_service.subscribe_snapshot(user_id);
+        if let Err(e) = self.state.quest_service.refresh_user(user_id).await {
+            tracing::warn!(error = ?e, "failed to refresh quest snapshot");
+        }
+        let initial_ultimate_cooldowns =
+            match self.state.ultimate_service.list_cooldowns(user_id).await {
+                Ok(cooldowns) => cooldowns,
+                Err(e) => {
+                    tracing::warn!(error = ?e, "failed to load ultimate cooldowns");
+                    Vec::new()
+                }
+            };
+        let artboard_ban = match self.state.db.get().await {
+            Ok(client) => match ArtboardBan::find_active_for_user(&client, user_id).await {
+                Ok(ban) => ban,
+                Err(e) => {
+                    tracing::warn!(error = ?e, "failed to check artboard ban status");
+                    None
+                }
+            },
+            Err(e) => {
+                tracing::warn!(error = ?e, "failed to get db client for artboard ban check");
+                None
+            }
+        };
+        let key_fingerprint = self.auth_fingerprint.clone();
+        let key_layout = crate::session_bootstrap::load_device_rails(
+            &self.state,
+            user_id,
+            key_fingerprint.as_deref(),
+        )
+        .await;
+        let initial_announcements = match self.state.db.get().await {
+            Ok(client) => {
+                match crate::app::announcements::load_login_announcements(&client, user_id).await {
+                    Ok(announcements) => announcements,
+                    Err(e) => {
+                        tracing::warn!(error = ?e, "failed to load login announcements");
+                        None
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!(error = ?e, "failed to get db client for login announcements");
+                None
+            }
+        };
+        let initial_door_rcs = match self.state.door_rc_service.list(user_id).await {
+            Ok(rcs) => rcs,
+            Err(e) => {
+                tracing::warn!(error = ?e, "failed to load door rc files");
+                Vec::new()
+            }
+        };
+        let (input_tx, input_rx) = tokio::sync::mpsc::channel(INPUT_QUEUE_CAP);
+        let mut app = crate::app::state::App::new(SessionConfig {
+            // Terminal / layout
+            cols: cols,
+            rows: rows,
+            term: term.to_string(),
+            bbs_identity: (!self.bbs_identity.is_empty()).then(|| self.bbs_identity.clone()),
+
+            // Services / data sources
+            audio_service: self.state.audio_service.clone(),
+            voice_service: self.state.voice_service.clone(),
+            stream_service: self.state.stream_service.clone(),
+            chat_service,
+            translation_service: self.state.translation_service.clone(),
+            notification_service: self.state.notification_service.clone(),
+            article_service,
+            feed_service: self.state.feed_service.clone(),
+            cyberspace_service: self.state.cyberspace_service.clone(),
+            showcase_service: self.state.showcase_service.clone(),
+            work_service: self.state.work_service.clone(),
+            profile_service,
+            twenty_forty_eight_service,
+            initial_2048_game,
+            initial_2048_high_score,
+            tetris_service: self.state.tetris_service.clone(),
+            snake_service: self.state.snake_service.clone(),
+            traffic_service: self.state.traffic_service.clone(),
+            rubiks_cube_service: self.state.rubiks_cube_service.clone(),
+            initial_rubiks_cube_game,
+            initial_tetris_game,
+            initial_snake_game,
+            initial_tetris_high_score,
+            initial_snake_high_score,
+            initial_traffic_track_scores,
+            initial_traffic_high_score,
+            le_word_service,
+            initial_le_word_daily_word,
+            initial_le_word_game,
+            sudoku_service,
+            initial_sudoku_games,
+            nonogram_service,
+            initial_nonogram_games,
+            solitaire_service,
+            initial_solitaire_games,
+            minesweeper_service: self.state.minesweeper_service.clone(),
+            initial_minesweeper_games,
+            lateania_service: self.state.lateania_service.clone(),
+            greendragon_service: self.state.greendragon_service.clone(),
+            darkroom_service: self.state.darkroom_service.clone(),
+            arcade_handle_service: self.state.arcade_handle_service.clone(),
+            door_rc_service: self.state.door_rc_service.clone(),
+            initial_door_rcs,
+            daily_service: self.state.daily_service.clone(),
+            house_registry: self.state.house_registry.clone(),
+            dartboard_server: self.state.dartboard_server.clone(),
+            dartboard_provenance: self.state.dartboard_provenance.clone(),
+            artboard_snapshot_service: crate::app::artboard::svc::ArtboardSnapshotService::new(
+                self.state.db.clone(),
+            ),
+            username: user.username.clone(),
+            bonsai_service: self.state.bonsai_service.clone(),
+            initial_bonsai_tree,
+            initial_bonsai_care,
+            initial_bonsai_v2_tree,
+            initial_bonsai_decay_protection,
+            pet_service: self.state.pet_service.clone(),
+            initial_pet,
+            quest_service: self.state.quest_service.clone(),
+            quest_snapshot_rx,
+            shop_service: self.state.shop_service.clone(),
+            shop_snapshot_rx,
+            ultimate_service: self.state.ultimate_service.clone(),
+            initial_ultimate_cooldowns,
+            nonogram_library,
+            chip_service: self.state.chip_service.clone(),
+            initial_chip_balance,
+            leaderboard_rx: Some(self.state.leaderboard_service.subscribe()),
+
+            // Session / connection
+            web_url: self.state.config.web_url.clone(),
+            rebels_enabled: self.state.config.rebels_enabled,
+            rebels_host: self.state.config.rebels_host.clone(),
+            rebels_port: self.state.config.rebels_port,
+            rebels_secret: self.state.config.rebels_secret.clone(),
+            nethack_enabled: self.state.config.nethack_enabled,
+            nethack_host: self.state.config.nethack_host.clone(),
+            nethack_port: self.state.config.nethack_port,
+            nethack_secret: self.state.config.nethack_secret.clone(),
+            nethack_activity: Some(
+                crate::app::activity::publisher::ActivityPublisher::new(
+                    self.state.db.clone(),
+                    self.state.activity_feed.clone(),
+                )
+                .with_username_directory(self.state.username_directory.clone()),
+            ),
+            dcss_enabled: self.state.config.dcss_enabled,
+            dcss_host: self.state.config.dcss_host.clone(),
+            dcss_port: self.state.config.dcss_port,
+            dcss_secret: self.state.config.dcss_secret.clone(),
+            brogue_enabled: self.state.config.brogue_enabled,
+            brogue_host: self.state.config.brogue_host.clone(),
+            brogue_port: self.state.config.brogue_port,
+            brogue_secret: self.state.config.brogue_secret.clone(),
+            usurper_enabled: self.state.config.usurper_enabled,
+            usurper_host: self.state.config.usurper_host.clone(),
+            usurper_port: self.state.config.usurper_port,
+            usurper_secret: self.state.config.usurper_secret.clone(),
+            dopewars_enabled: self.state.config.dopewars_enabled,
+            dopewars_host: self.state.config.dopewars_host.clone(),
+            dopewars_port: self.state.config.dopewars_port,
+            dopewars_secret: self.state.config.dopewars_secret.clone(),
+            bashquest_enabled: self.state.config.bashquest_enabled,
+            bashquest_host: self.state.config.bashquest_host.clone(),
+            bashquest_port: self.state.config.bashquest_port,
+            bashquest_secret: self.state.config.bashquest_secret.clone(),
+            bashquest_awards: Some(crate::app::door::bashquest::graduate::BashquestAwards::new(
+                self.state.db.clone(),
+            )),
+            codekeep_enabled: self.state.config.codekeep_enabled,
+            codekeep_host: self.state.config.codekeep_host.clone(),
+            codekeep_port: self.state.config.codekeep_port,
+            codekeep_secret: self.state.config.codekeep_secret.clone(),
+            session_token,
+            session_registry: Some(self.state.session_registry.clone()),
+            paired_client_registry: Some(self.state.paired_client_registry.clone()),
+            session_rx: Some(session_rx),
+            now_playing_rx: Some(self.state.now_playing_rx.clone()),
+            radio_meta_rx: Some(self.state.radio_meta_rx.clone()),
+            active_users: Some(self.state.active_users.clone()),
+            clubhouse_lobby: Some(self.state.clubhouse_lobby.clone()),
+            mention_ladders: self.state.mention_ladders.clone(),
+            files: self.state.config.files.clone(),
+            scratchpad_registry: Some(self.state.scratchpad_registry.clone()),
+            clubhouse_tutorial_done: late_core::models::user::extract_clubhouse_tutorial_done(
+                &user.settings,
+            ),
+            show_aquarium_tray: late_core::models::user::extract_show_aquarium_tray(&user.settings),
+            key_fingerprint,
+            key_layout,
+            afk_users: self.state.afk_users.clone(),
+            username_directory: Some(self.state.username_directory.clone()),
+            flair_directory: Some(self.state.flair_directory.clone()),
+            pomodoro_directory: Some(self.state.pomodoro_directory.clone()),
+            activity_feed_rx: self.activity_feed_rx.take(),
+            initial_announcements,
+            user_id,
+            permissions,
+            artboard_banned: artboard_ban.is_some(),
+            artboard_ban_expires_at: artboard_ban.and_then(|ban| ban.expires_at),
+
+            is_new_user: self.is_new_user,
+            land_on_home: late_core::models::user::extract_land_on_home(&user.settings),
+
+            // Display config
+            initial_theme_id: late_ssh_theme_id(&user.settings),
+            initial_interaction_mode: late_core::models::user::extract_interaction_mode(
+                &user.settings,
+            ),
+            initial_audio_source: late_core::models::user::extract_audio_source(&user.settings),
+            initial_icecast_stream: late_core::models::user::extract_icecast_stream(&user.settings),
+            initial_radio_station: late_core::models::user::extract_radio_station(&user.settings),
+
+            // Server state
+            is_draining: self.state.is_draining.clone(),
+        })
+        .context("failed to initialize app for PTY session")?;
+        for (name, value) in &self.terminal_env_hints {
+            app.apply_terminal_env_hint(name, value);
+        }
+        self.app = Some(Arc::new(TokioMutex::new(app)));
+        self.input_tx = Some(input_tx);
+        self.input_rx = Some(input_rx);
+        Ok(())
     }
 }
 
@@ -711,7 +1056,9 @@ impl russh::server::Handler for ClientHandler {
         session: &mut Session,
     ) -> Result<(), Self::Error> {
         tracing::debug!(term, col_width, row_height, "pty requested");
+
         let terminal_size = clamp_terminal_size(col_width, row_height);
+
         if terminal_size.clamped {
             tracing::warn!(
                 term,
@@ -722,339 +1069,27 @@ impl russh::server::Handler for ClientHandler {
                 "clamped oversized pty dimensions"
             );
         }
-        let session_token = self.ensure_cli_session().await?;
-        self.track_active_session_token(&session_token);
-        let session_rx = self
-            .session_rx
-            .take()
-            .ok_or_else(|| anyhow::anyhow!("cli session receiver missing during pty request"))?;
 
-        let article_service = self.state.article_service.clone();
-        let chat_service = self.state.chat_service.clone();
-        let profile_service = self.state.profile_service.clone();
-        let twenty_forty_eight_service = self.state.twenty_forty_eight_service.clone();
-        let le_word_service = self.state.le_word_service.clone();
-        let sudoku_service = self.state.sudoku_service.clone();
-        let nonogram_service = self.state.nonogram_service.clone();
-        let solitaire_service = self.state.solitaire_service.clone();
-        let nonogram_library = self.state.nonogram_library.clone();
+        // PTY negotiation is deliberately separate from application
+        // bootstrap. OpenSSH may deliver SetEnv requests after PTY
+        // negotiation, including the upstream BinkTerm identity.
+        self.pty_term = Some(term.to_string());
+        self.pty_cols = Some(terminal_size.cols);
+        self.pty_rows = Some(terminal_size.rows);
 
-        let user = match self.user.as_ref() {
-            Some(user) => user,
-            None => {
-                tracing::error!("pty request without authenticated user");
-                return Err(anyhow::anyhow!("unauthenticated pty request"));
-            }
-        };
-
-        let user_id = user.id;
-        let permissions = AuthzPermissions::new(
-            user.is_admin || self.state.config.force_admin,
-            user.is_moderator,
+        tracing::debug!(
+            term,
+            cols = terminal_size.cols,
+            rows = terminal_size.rows,
+            bbs_identity_present = !self.bbs_identity.is_empty(),
+            "PTY recorded; deferring application bootstrap until shell request"
         );
 
-        let ArcadeSessionPreloads {
-            initial_2048_game,
-            initial_2048_high_score,
-            initial_tetris_game,
-            initial_tetris_high_score,
-            initial_snake_game,
-            initial_snake_high_score,
-            initial_traffic_track_scores,
-            initial_traffic_high_score,
-            initial_le_word_daily_word,
-            initial_le_word_game,
-            initial_rubiks_cube_game,
-            initial_sudoku_games,
-            initial_nonogram_games,
-            initial_solitaire_games,
-            initial_minesweeper_games,
-        } = load_arcade_session_preloads(&self.state, user_id).await;
-        let (initial_bonsai_tree, initial_bonsai_care, initial_bonsai_decay_protection) = match self
-            .state
-            .bonsai_service
-            .ensure_tree_with_care(user_id)
-            .await
-        {
-            Ok((tree, care, protection)) => (Some(tree), Some(care), protection),
-            Err(e) => {
-                tracing::warn!(error = ?e, "failed to load/create bonsai tree");
-                (None, None, None)
-            }
-        };
-        let shop_snapshot_rx = self.state.shop_service.subscribe_snapshot(user_id);
-        let shop_snapshot = match self.state.shop_service.refresh_user(user_id).await {
-            Ok(snapshot) => Some(snapshot),
-            Err(e) => {
-                tracing::warn!(error = ?e, "failed to refresh shop snapshot");
-                None
-            }
-        };
-        let initial_bonsai_v2_tree = if shop_snapshot
-            .as_ref()
-            .is_some_and(|snapshot| snapshot.entitlements.has_dynamic_bonsai())
-        {
-            match self
-                .state
-                .bonsai_service
-                .ensure_v2_tree(user_id, initial_bonsai_tree.as_ref())
-                .await
-            {
-                Ok(tree) => Some(tree),
-                Err(e) => {
-                    tracing::warn!(error = ?e, "failed to load/create bonsai v2 tree");
-                    None
-                }
-            }
-        } else {
-            None
-        };
-        let initial_pet = match self.state.pet_service.ensure_cat(user_id).await {
-            Ok(cat) => Some(cat),
-            Err(e) => {
-                tracing::warn!(error = ?e, "failed to load/create cat companion");
-                None
-            }
-        };
-
-        // Ensure the user's chip balance row exists.
-        let initial_chip_balance = match self.state.chip_service.ensure_chips(user_id).await {
-            Ok(chips) => chips.balance,
-            Err(e) => {
-                tracing::warn!(error = ?e, "failed to ensure chip balance");
-                0
-            }
-        };
-        let quest_snapshot_rx = self.state.quest_service.subscribe_snapshot(user_id);
-        if let Err(e) = self.state.quest_service.refresh_user(user_id).await {
-            tracing::warn!(error = ?e, "failed to refresh quest snapshot");
-        }
-        let initial_ultimate_cooldowns =
-            match self.state.ultimate_service.list_cooldowns(user_id).await {
-                Ok(cooldowns) => cooldowns,
-                Err(e) => {
-                    tracing::warn!(error = ?e, "failed to load ultimate cooldowns");
-                    Vec::new()
-                }
-            };
-        let artboard_ban = match self.state.db.get().await {
-            Ok(client) => match ArtboardBan::find_active_for_user(&client, user_id).await {
-                Ok(ban) => ban,
-                Err(e) => {
-                    tracing::warn!(error = ?e, "failed to check artboard ban status");
-                    None
-                }
-            },
-            Err(e) => {
-                tracing::warn!(error = ?e, "failed to get db client for artboard ban check");
-                None
-            }
-        };
-        let key_fingerprint = self.auth_fingerprint.clone();
-        let key_layout = crate::session_bootstrap::load_device_rails(
-            &self.state,
-            user_id,
-            key_fingerprint.as_deref(),
-        )
-        .await;
-        let initial_announcements = match self.state.db.get().await {
-            Ok(client) => {
-                match crate::app::announcements::load_login_announcements(&client, user_id).await {
-                    Ok(announcements) => announcements,
-                    Err(e) => {
-                        tracing::warn!(error = ?e, "failed to load login announcements");
-                        None
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::warn!(error = ?e, "failed to get db client for login announcements");
-                None
-            }
-        };
-        let initial_door_rcs = match self.state.door_rc_service.list(user_id).await {
-            Ok(rcs) => rcs,
-            Err(e) => {
-                tracing::warn!(error = ?e, "failed to load door rc files");
-                Vec::new()
-            }
-        };
-        let (input_tx, input_rx) = tokio::sync::mpsc::channel(INPUT_QUEUE_CAP);
-        let mut app = crate::app::state::App::new(SessionConfig {
-            // Terminal / layout
-            cols: terminal_size.cols,
-            rows: terminal_size.rows,
-            term: term.to_string(),
-            bbs_identity: (!self.bbs_identity.is_empty()).then(|| self.bbs_identity.clone()),
-
-            // Services / data sources
-            audio_service: self.state.audio_service.clone(),
-            voice_service: self.state.voice_service.clone(),
-            stream_service: self.state.stream_service.clone(),
-            chat_service,
-            translation_service: self.state.translation_service.clone(),
-            notification_service: self.state.notification_service.clone(),
-            article_service,
-            feed_service: self.state.feed_service.clone(),
-            cyberspace_service: self.state.cyberspace_service.clone(),
-            showcase_service: self.state.showcase_service.clone(),
-            work_service: self.state.work_service.clone(),
-            profile_service,
-            twenty_forty_eight_service,
-            initial_2048_game,
-            initial_2048_high_score,
-            tetris_service: self.state.tetris_service.clone(),
-            snake_service: self.state.snake_service.clone(),
-            traffic_service: self.state.traffic_service.clone(),
-            rubiks_cube_service: self.state.rubiks_cube_service.clone(),
-            initial_rubiks_cube_game,
-            initial_tetris_game,
-            initial_snake_game,
-            initial_tetris_high_score,
-            initial_snake_high_score,
-            initial_traffic_track_scores,
-            initial_traffic_high_score,
-            le_word_service,
-            initial_le_word_daily_word,
-            initial_le_word_game,
-            sudoku_service,
-            initial_sudoku_games,
-            nonogram_service,
-            initial_nonogram_games,
-            solitaire_service,
-            initial_solitaire_games,
-            minesweeper_service: self.state.minesweeper_service.clone(),
-            initial_minesweeper_games,
-            lateania_service: self.state.lateania_service.clone(),
-            greendragon_service: self.state.greendragon_service.clone(),
-            darkroom_service: self.state.darkroom_service.clone(),
-            arcade_handle_service: self.state.arcade_handle_service.clone(),
-            door_rc_service: self.state.door_rc_service.clone(),
-            initial_door_rcs,
-            daily_service: self.state.daily_service.clone(),
-            house_registry: self.state.house_registry.clone(),
-            dartboard_server: self.state.dartboard_server.clone(),
-            dartboard_provenance: self.state.dartboard_provenance.clone(),
-            artboard_snapshot_service: crate::app::artboard::svc::ArtboardSnapshotService::new(
-                self.state.db.clone(),
-            ),
-            username: user.username.clone(),
-            bonsai_service: self.state.bonsai_service.clone(),
-            initial_bonsai_tree,
-            initial_bonsai_care,
-            initial_bonsai_v2_tree,
-            initial_bonsai_decay_protection,
-            pet_service: self.state.pet_service.clone(),
-            initial_pet,
-            quest_service: self.state.quest_service.clone(),
-            quest_snapshot_rx,
-            shop_service: self.state.shop_service.clone(),
-            shop_snapshot_rx,
-            ultimate_service: self.state.ultimate_service.clone(),
-            initial_ultimate_cooldowns,
-            nonogram_library,
-            chip_service: self.state.chip_service.clone(),
-            initial_chip_balance,
-            leaderboard_rx: Some(self.state.leaderboard_service.subscribe()),
-
-            // Session / connection
-            web_url: self.state.config.web_url.clone(),
-            rebels_enabled: self.state.config.rebels_enabled,
-            rebels_host: self.state.config.rebels_host.clone(),
-            rebels_port: self.state.config.rebels_port,
-            rebels_secret: self.state.config.rebels_secret.clone(),
-            nethack_enabled: self.state.config.nethack_enabled,
-            nethack_host: self.state.config.nethack_host.clone(),
-            nethack_port: self.state.config.nethack_port,
-            nethack_secret: self.state.config.nethack_secret.clone(),
-            nethack_activity: Some(
-                crate::app::activity::publisher::ActivityPublisher::new(
-                    self.state.db.clone(),
-                    self.state.activity_feed.clone(),
-                )
-                .with_username_directory(self.state.username_directory.clone()),
-            ),
-            dcss_enabled: self.state.config.dcss_enabled,
-            dcss_host: self.state.config.dcss_host.clone(),
-            dcss_port: self.state.config.dcss_port,
-            dcss_secret: self.state.config.dcss_secret.clone(),
-            brogue_enabled: self.state.config.brogue_enabled,
-            brogue_host: self.state.config.brogue_host.clone(),
-            brogue_port: self.state.config.brogue_port,
-            brogue_secret: self.state.config.brogue_secret.clone(),
-            usurper_enabled: self.state.config.usurper_enabled,
-            usurper_host: self.state.config.usurper_host.clone(),
-            usurper_port: self.state.config.usurper_port,
-            usurper_secret: self.state.config.usurper_secret.clone(),
-            dopewars_enabled: self.state.config.dopewars_enabled,
-            dopewars_host: self.state.config.dopewars_host.clone(),
-            dopewars_port: self.state.config.dopewars_port,
-            dopewars_secret: self.state.config.dopewars_secret.clone(),
-            bashquest_enabled: self.state.config.bashquest_enabled,
-            bashquest_host: self.state.config.bashquest_host.clone(),
-            bashquest_port: self.state.config.bashquest_port,
-            bashquest_secret: self.state.config.bashquest_secret.clone(),
-            bashquest_awards: Some(crate::app::door::bashquest::graduate::BashquestAwards::new(
-                self.state.db.clone(),
-            )),
-            codekeep_enabled: self.state.config.codekeep_enabled,
-            codekeep_host: self.state.config.codekeep_host.clone(),
-            codekeep_port: self.state.config.codekeep_port,
-            codekeep_secret: self.state.config.codekeep_secret.clone(),
-            session_token,
-            session_registry: Some(self.state.session_registry.clone()),
-            paired_client_registry: Some(self.state.paired_client_registry.clone()),
-            session_rx: Some(session_rx),
-            now_playing_rx: Some(self.state.now_playing_rx.clone()),
-            radio_meta_rx: Some(self.state.radio_meta_rx.clone()),
-            active_users: Some(self.state.active_users.clone()),
-            clubhouse_lobby: Some(self.state.clubhouse_lobby.clone()),
-            mention_ladders: self.state.mention_ladders.clone(),
-            files: self.state.config.files.clone(),
-            scratchpad_registry: Some(self.state.scratchpad_registry.clone()),
-            clubhouse_tutorial_done: late_core::models::user::extract_clubhouse_tutorial_done(
-                &user.settings,
-            ),
-            show_aquarium_tray: late_core::models::user::extract_show_aquarium_tray(&user.settings),
-            key_fingerprint,
-            key_layout,
-            afk_users: self.state.afk_users.clone(),
-            username_directory: Some(self.state.username_directory.clone()),
-            flair_directory: Some(self.state.flair_directory.clone()),
-            pomodoro_directory: Some(self.state.pomodoro_directory.clone()),
-            activity_feed_rx: self.activity_feed_rx.take(),
-            initial_announcements,
-            user_id,
-            permissions,
-            artboard_banned: artboard_ban.is_some(),
-            artboard_ban_expires_at: artboard_ban.and_then(|ban| ban.expires_at),
-
-            is_new_user: self.is_new_user,
-            land_on_home: late_core::models::user::extract_land_on_home(&user.settings),
-
-            // Display config
-            initial_theme_id: late_ssh_theme_id(&user.settings),
-            initial_interaction_mode: late_core::models::user::extract_interaction_mode(
-                &user.settings,
-            ),
-            initial_audio_source: late_core::models::user::extract_audio_source(&user.settings),
-            initial_icecast_stream: late_core::models::user::extract_icecast_stream(&user.settings),
-            initial_radio_station: late_core::models::user::extract_radio_station(&user.settings),
-
-            // Server state
-            is_draining: self.state.is_draining.clone(),
-        })
-        .context("failed to initialize app for PTY session")?;
-        for (name, value) in &self.terminal_env_hints {
-            app.apply_terminal_env_hint(name, value);
-        }
-        self.app = Some(Arc::new(TokioMutex::new(app)));
-        self.input_tx = Some(input_tx);
-        self.input_rx = Some(input_rx);
         match session.channel_success(channel) {
             Ok(()) => tracing::debug!("pty channel_success sent"),
             Err(e) => tracing::error!(error = ?e, "pty channel_success failed"),
         }
+
         Ok(())
     }
 
@@ -1066,6 +1101,8 @@ impl russh::server::Handler for ClientHandler {
         variable_value: &str,
         session: &mut Session,
     ) -> Result<(), Self::Error> {
+        tracing::debug!(variable_name, variable_value, "SSH env request received");
+
         if variable_name == CLI_MODE_ENV {
             self.cli_mode = matches!(variable_value, "1" | "true" | "TRUE" | "yes" | "YES");
             tracing::debug!(
@@ -1197,13 +1234,76 @@ impl russh::server::Handler for ClientHandler {
         Ok(())
     }
 
+    /// Build the application only after PTY negotiation and SSH SetEnv
+    /// processing have completed. This is important for BinkTerm: the
+    /// upstream BBS identity may arrive after the PTY request.
     #[tracing::instrument(skip(self, session), fields(peer = ?self.peer_addr, transport = ?self.transport_peer_addr))]
     async fn shell_request(
         &mut self,
         channel: ChannelId,
         session: &mut Session,
     ) -> Result<(), Self::Error> {
-        tracing::debug!("shell requested");
+        tracing::debug!(
+            bbs_identity_present = !self.bbs_identity.is_empty(),
+            "shell requested"
+        );
+
+        let term = self.pty_term.clone().unwrap_or_else(|| "xterm".to_string());
+        let cols = self.pty_cols.unwrap_or(80);
+        let rows = self.pty_rows.unwrap_or(24);
+
+        // BinkTerm is the upstream identity authority when it supplies an
+        // identity. Resolve the stable external BinkTerm user ID through the
+        // explicit identity-link table before constructing the application.
+        // Never silently fall back to the SSH-authenticated account when
+        // BinkTerm asserted an identity.
+        if !self.bbs_identity.is_empty() {
+            let external_user_id = self.bbs_identity.user_id.as_deref().ok_or_else(|| {
+                anyhow::anyhow!("BinkTerm identity is present but BINKTERM_USER_ID is missing")
+            })?;
+
+            let client = self.state.db.get().await?;
+
+            let late_user_id = late_core::models::bbs_identity_link::BbsIdentityLink::find_user_id(
+                &client,
+                "binkterm",
+                external_user_id,
+            )
+            .await
+            .context("failed to resolve BinkTerm identity link")?
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no Late identity link exists for BinkTerm user ID '{}'",
+                    external_user_id
+                )
+            })?;
+
+            let user = User::find_by_id(&client, late_user_id)
+                .await
+                .context("failed to load linked Late user")?
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "BinkTerm identity link points to missing Late user '{}'",
+                        late_user_id
+                    )
+                })?;
+
+            tracing::info!(
+                binkterm_user_id = %external_user_id,
+                binkterm_username = ?self.bbs_identity.username,
+                late_user_id = %user.id,
+                late_username = %user.username,
+                "resolved BinkTerm identity link to late.sh user"
+            );
+
+            self.user = Some(user);
+        }
+
+        if self.app.is_none() {
+            self.bootstrap_app(&term, cols, rows)
+                .await
+                .context("failed to bootstrap shell application")?;
+        }
 
         if let Some(target) = self.launch_target.as_deref() {
             let Some(app) = self.app.as_ref() else {
