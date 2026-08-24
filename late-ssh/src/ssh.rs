@@ -1105,6 +1105,16 @@ impl russh::server::Handler for ClientHandler {
                 _ => unreachable!("BinkTerm env name was matched above"),
             }
 
+            // PTY setup may construct App before OpenSSH delivers SetEnv
+            // requests. Keep the live App's session-scoped BBS identity in
+            // sync so direct-launched experiences see the completed identity
+            // when shell_request starts them.
+            if let Some(app) = self.app.as_ref() {
+                let mut app = app.lock().await;
+                app.bbs_identity =
+                    (!self.bbs_identity.is_empty()).then(|| self.bbs_identity.clone());
+            }
+
             tracing::debug!(
                 variable_name,
                 identity_present = !self.bbs_identity.is_empty(),

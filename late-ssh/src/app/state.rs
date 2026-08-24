@@ -986,6 +986,24 @@ impl App {
         self.bbs_identity.as_ref()
     }
 
+    /// Player-facing name for experiences entered through this session.
+    ///
+    /// BBS-launched sessions prefer the upstream display name, then username.
+    /// Native late.sh sessions continue using the authenticated late.sh username.
+    /// Ownership and authorization remain keyed to late.sh's authenticated
+    /// `user_id`; experiences may use this as a display name or as the default
+    /// name when creating a new character.
+    pub fn effective_player_name(&self) -> &str {
+        self.bbs_identity()
+            .and_then(|identity| {
+                identity
+                    .display_name
+                    .as_deref()
+                    .or(identity.username.as_deref())
+            })
+            .unwrap_or(&self.username)
+    }
+
     pub fn new(config: SessionConfig) -> anyhow::Result<Self> {
         let (cols, rows) = if config.cols == 0 || config.rows == 0 {
             tracing::warn!(
@@ -1633,10 +1651,13 @@ impl App {
         if self.greendragon_state.is_some() {
             return;
         }
+
+        let player_name = self.effective_player_name().to_string();
+
         self.greendragon_state = Some(crate::app::door::greendragon::state::State::new(
             self.greendragon_service.clone(),
             self.user_id,
-            self.username.clone(),
+            player_name,
         ));
     }
 
