@@ -1842,8 +1842,14 @@ impl App {
         if self.usurper_state.is_some() {
             return;
         }
+        let context = crate::app::door::context::DoorContext {
+            user_id: self.user_id,
+            player_name: self.effective_player_name().to_string(),
+            session_origin: self.session_origin(),
+        };
+
         self.usurper_state = Some(crate::app::door::usurper::state::State::new(
-            self.user_id,
+            context,
             self.usurper_host.clone(),
             self.usurper_port,
             self.usurper_secret.clone(),
