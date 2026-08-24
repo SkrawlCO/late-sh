@@ -28,6 +28,25 @@ impl BbsIdentity {
     }
 }
 
+/// Where this session identity originated.
+///
+/// Native late.sh sessions have no upstream identity.
+/// BBS sessions carry the identity asserted by the gateway.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionOrigin {
+    Native,
+    Bbs(BbsIdentity),
+}
+
+impl SessionOrigin {
+    pub fn provider(&self) -> &'static str {
+        match self {
+            SessionOrigin::Native => "late.sh",
+            SessionOrigin::Bbs(_) => "BinkTerm",
+        }
+    }
+}
+
 pub struct SessionBootstrapInputs {
     pub user: User,
     pub is_new_user: bool,

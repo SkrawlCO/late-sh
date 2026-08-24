@@ -986,6 +986,17 @@ impl App {
         self.bbs_identity.as_ref()
     }
 
+    /// Origin of the current session identity.
+    ///
+    /// Doors can consume identity provenance without knowing about SSH
+    /// bootstrap details or individual BBS integrations.
+    pub fn session_origin(&self) -> crate::session_bootstrap::SessionOrigin {
+        match self.bbs_identity() {
+            Some(identity) => crate::session_bootstrap::SessionOrigin::Bbs(identity.clone()),
+            None => crate::session_bootstrap::SessionOrigin::Native,
+        }
+    }
+
     /// Player-facing name for experiences entered through this session.
     ///
     /// BBS-launched sessions prefer the upstream display name, then username.
