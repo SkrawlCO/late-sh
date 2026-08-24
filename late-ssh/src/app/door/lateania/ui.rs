@@ -80,7 +80,7 @@ pub fn draw_game(frame: &mut Frame, area: Rect, state: &State, usernames: &Usern
     // dense dashboard (portrait, dot-rated scores, vitals bars). It falls back
     // to the narrow side panel on cramped terminals.
     if state.panel() == Panel::Character && area.width >= 72 && area.height >= 18 {
-        draw_character_sheet(frame, area, &view);
+        draw_character_sheet(frame, area, state, &view);
         return;
     }
 
@@ -3794,7 +3794,7 @@ fn map_cell_span(cell: MapCell) -> Span<'static> {
 /// Full-width character dashboard (the `c` panel when the terminal is roomy).
 /// A class portrait and vitals bars on the left, ability scores as dot ratings
 /// in the middle, and combat/derived stats, trait, titles, and XP on the right.
-fn draw_character_sheet(frame: &mut Frame, area: Rect, view: &PlayerView) {
+fn draw_character_sheet(frame: &mut Frame, area: Rect, state: &State, view: &PlayerView) {
     let accent = class_accent(Class::from_key(&view.class_key));
     let block = Block::default()
         .borders(Borders::ALL)
@@ -3813,7 +3813,10 @@ fn draw_character_sheet(frame: &mut Frame, area: Rect, view: &PlayerView) {
     ])
     .split(inner);
 
-    frame.render_widget(Paragraph::new(sheet_identity(view, accent)), cols[0]);
+    frame.render_widget(
+        Paragraph::new(sheet_identity(state.player_name(), view, accent)),
+        cols[0],
+    );
     frame.render_widget(
         Paragraph::new(sheet_attributes(view, accent)).wrap(Wrap { trim: false }),
         cols[1],
@@ -3825,9 +3828,15 @@ fn draw_character_sheet(frame: &mut Frame, area: Rect, view: &PlayerView) {
 }
 
 /// Left column: portrait, identity headline, and vitals as filled meters.
-fn sheet_identity(view: &PlayerView, accent: Color) -> Vec<Line<'static>> {
+fn sheet_identity(player_name: &str, view: &PlayerView, accent: Color) -> Vec<Line<'static>> {
     let mut lines = composed_portrait(&view.class_key, &view.appearance_idx, accent);
     lines.push(Line::raw(""));
+    lines.push(Line::from(Span::styled(
+        player_name.to_string(),
+        Style::default()
+            .fg(theme::TEXT_BRIGHT())
+            .add_modifier(Modifier::BOLD),
+    )));
     lines.push(Line::from(Span::styled(
         format!("Lv {} {}", view.level, view.class_name),
         Style::default().fg(accent).add_modifier(Modifier::BOLD),
