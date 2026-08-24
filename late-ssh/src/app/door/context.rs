@@ -9,10 +9,13 @@ pub struct DoorContext {
 }
 
 impl DoorContext {
+    /// True when this door session originated from an upstream BBS.
     pub fn bbs_mode(&self) -> bool {
-        matches!(
-            self.session_origin,
-            SessionOrigin::Bbs(_)
-        )
+        self.session_origin.is_bbs()
+    }
+
+    /// Identity provider that originated this session.
+    pub fn provider(&self) -> &'static str {
+        self.session_origin.provider()
     }
 }
