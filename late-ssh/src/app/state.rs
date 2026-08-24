@@ -1816,7 +1816,11 @@ impl App {
         }
         self.brogue_state = Some(crate::app::door::brogue::state::State::new(
             crate::app::door::brogue::state::StateConfig {
-                user_id: self.user_id,
+                context: crate::app::door::context::DoorContext {
+                    user_id: self.user_id,
+                    player_name: self.effective_player_name().to_string(),
+                    session_origin: self.session_origin(),
+                },
                 host: self.brogue_host.clone(),
                 port: self.brogue_port,
                 secret: self.brogue_secret.clone(),

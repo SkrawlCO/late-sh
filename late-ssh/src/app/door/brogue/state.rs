@@ -6,6 +6,7 @@ use ratatui::layout::Rect;
 use super::proxy::{BrogueProcess, ProcessConfig, ProxyStatus};
 use crate::app::door::arcade::{ArcadeHandleService, HandleFlow, HandleKeyResult};
 use crate::render_signal::RenderSignal;
+use crate::app::door::context::DoorContext;
 
 // The launcher UI renders straight off the shared flow's status.
 pub use crate::app::door::arcade::HandleStatus;
@@ -31,7 +32,7 @@ const IDLE_SHUTDOWN: Duration = Duration::from_secs(20 * 60);
 /// Everything a fresh per-session Brogue door state needs. One struct instead
 /// of a long positional constructor, so every call site names what it passes.
 pub struct StateConfig {
-    pub user_id: uuid::Uuid,
+    pub context: DoorContext,
     pub host: String,
     pub port: u16,
     pub secret: String,
@@ -87,7 +88,7 @@ impl State {
             term: cfg.term,
             // A disabled door never looks the handle up.
             handle: HandleFlow::new(
-                cfg.user_id,
+                cfg.context.user_id,
                 if cfg.enabled { cfg.handle_svc } else { None },
                 cfg.repaint.clone(),
             ),
