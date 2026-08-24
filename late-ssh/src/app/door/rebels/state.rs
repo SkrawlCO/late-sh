@@ -4,6 +4,7 @@ use ratatui::layout::Rect;
 
 use super::proxy::{ProxyConfig, ProxyStatus, RebelsProxy};
 use crate::render_signal::RenderSignal;
+use crate::app::door::context::DoorContext;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mode {
@@ -32,7 +33,7 @@ pub struct State {
 
 impl State {
     pub fn new(
-        user_id: uuid::Uuid,
+        context: DoorContext,
         host: String,
         port: u16,
         secret: String,
@@ -40,6 +41,8 @@ impl State {
         enabled: bool,
         repaint: Option<Arc<RenderSignal>>,
     ) -> Self {
+        let user_id = context.user_id;
+
         Self {
             user_id,
             host,

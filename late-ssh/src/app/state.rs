@@ -1724,8 +1724,14 @@ impl App {
         if self.rebels_state.is_some() {
             return;
         }
+        let context = crate::app::door::context::DoorContext {
+            user_id: self.user_id,
+            player_name: self.effective_player_name().to_string(),
+            session_origin: self.session_origin(),
+        };
+
         self.rebels_state = Some(crate::app::door::rebels::state::State::new(
-            self.user_id,
+            context,
             self.rebels_host.clone(),
             self.rebels_port,
             self.rebels_secret.clone(),
