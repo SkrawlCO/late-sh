@@ -1842,8 +1842,14 @@ impl App {
         if self.dopewars_state.is_some() {
             return;
         }
+        let context = crate::app::door::context::DoorContext {
+            user_id: self.user_id,
+            player_name: self.effective_player_name().to_string(),
+            session_origin: self.session_origin(),
+        };
+
         self.dopewars_state = Some(crate::app::door::dopewars::state::State::new(
-            self.user_id,
+            context,
             self.dopewars_host.clone(),
             self.dopewars_port,
             self.dopewars_secret.clone(),
