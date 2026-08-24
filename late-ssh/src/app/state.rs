@@ -1773,8 +1773,14 @@ impl App {
         if self.dcss_state.is_some() {
             return;
         }
+        let context = crate::app::door::context::DoorContext {
+            user_id: self.user_id,
+            player_name: self.effective_player_name().to_string(),
+            session_origin: self.session_origin(),
+        };
+
         self.dcss_state = Some(crate::app::door::dcss::state::State::new(
-            self.user_id,
+            context,
             self.dcss_host.clone(),
             self.dcss_port,
             self.dcss_secret.clone(),
