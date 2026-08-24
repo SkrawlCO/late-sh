@@ -145,6 +145,8 @@ struct ClientHandler {
     input_rx: Option<tokio::sync::mpsc::Receiver<Vec<u8>>>,
     cli_mode: bool,
     terminal_env_hints: Vec<(String, String)>,
+    /// Optional direct-launch target supplied by an SSH environment request.
+    launch_target: Option<String>,
     session_token: Option<String>,
     session_rx: Option<tokio::sync::mpsc::Receiver<crate::session::SessionMessage>>,
 }
@@ -348,6 +350,7 @@ impl Server {
             input_rx: None,
             cli_mode: false,
             terminal_env_hints: Vec::new(),
+            launch_target: None,
             session_token: None,
             session_rx: None,
         }
@@ -1045,6 +1048,25 @@ impl russh::server::Handler for ClientHandler {
                 cli_mode = self.cli_mode,
                 "updated cli mode from env request"
             );
+        } else if variable_name == "LATE_LAUNCH" {
+            let target = variable_value.trim().to_ascii_lowercase();
+
+            self.launch_target = match target.as_str() {
+                "lateania" => Some(target),
+                "" => None,
+                _ => {
+                    tracing::warn!(
+                        launch_target = %target,
+                        "ignoring unsupported direct launch target"
+                    );
+                    None
+                }
+            };
+
+            tracing::debug!(
+                launch_target = ?self.launch_target,
+                "updated direct launch target from env request"
+            );
         } else if crate::app::files::terminal_image::protocol_from_env_hint(
             variable_name,
             variable_value,
@@ -1129,6 +1151,32 @@ impl russh::server::Handler for ClientHandler {
         session: &mut Session,
     ) -> Result<(), Self::Error> {
         tracing::debug!("shell requested");
+
+        if self.launch_target.as_deref() == Some("lateania") {
+            let Some(app) = self.app.as_ref() else {
+                tracing::error!("Lateania direct launch requested before app initialization");
+                if let Err(e) = session.channel_failure(channel) {
+                    tracing::error!(error = ?e, "direct launch channel_failure failed");
+                }
+                return Ok(());
+            };
+
+            tracing::info!("starting interactive shell directly in Lateania");
+
+            let mut app = app.lock().await;
+
+            // Direct-launch sessions bypass clubhouse onboarding for this
+            // connection only. Do not persist tutorial completion: a normal
+            // late.sh login should still offer the user's unfinished tour.
+            app.clubhouse.tutorial =
+                crate::app::clubhouse::state::Tutorial::Off;
+
+            app.set_screen(crate::app::common::primitives::Screen::Lateania);
+            app.lateania_service
+                .select_slot(app.user_id, app.lateania_slot_cursor as i16);
+            app.enter_lateania();
+        }
+
         match session.channel_success(channel) {
             Ok(()) => tracing::debug!("shell channel_success sent"),
             Err(e) => tracing::error!(error = ?e, "shell channel_success failed"),
