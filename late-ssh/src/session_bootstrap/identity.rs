@@ -21,18 +21,14 @@ impl BbsIdentity {
     /// Prefer the BBS-provided user id because usernames/display names may
     /// change over time.
     pub fn stable_key(&self) -> Option<&str> {
-        self.user_id
-            .as_deref()
-            .or(self.username.as_deref())
+        self.user_id.as_deref().or(self.username.as_deref())
     }
 
     /// Human-facing name for display in experiences.
     ///
     /// Prefer the explicit display name, then fall back to username.
     pub fn display_name(&self) -> Option<&str> {
-        self.display_name
-            .as_deref()
-            .or(self.username.as_deref())
+        self.display_name.as_deref().or(self.username.as_deref())
     }
 }
 
@@ -59,4 +55,3 @@ impl SessionOrigin {
         matches!(self, SessionOrigin::Bbs(_))
     }
 }
-

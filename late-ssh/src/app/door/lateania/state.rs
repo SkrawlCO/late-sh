@@ -223,10 +223,7 @@ impl State {
         self.context.bbs_mode()
     }
 
-    pub fn new(
-        svc: LateaniaService,
-        context: DoorContext,
-    ) -> Self {
+    pub fn new(svc: LateaniaService, context: DoorContext) -> Self {
         let user_id = context.user_id;
         let player_name = context.player_name.clone();
 

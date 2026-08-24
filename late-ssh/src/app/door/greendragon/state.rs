@@ -575,10 +575,7 @@ impl State {
     /// Open a Green Dragon session for `user_id`, kicking off the character
     /// load. `name` is the player's display name, used only if they have no
     /// save yet.
-    pub fn new(
-        svc: GreenDragonService,
-        context: DoorContext,
-    ) -> Self {
+    pub fn new(svc: GreenDragonService, context: DoorContext) -> Self {
         let user_id = context.user_id;
         let name = context.player_name.clone();
 

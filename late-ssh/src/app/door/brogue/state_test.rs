@@ -2,7 +2,11 @@ use super::*;
 
 fn test_state(enabled: bool) -> State {
     State::new(StateConfig {
-        user_id: uuid::Uuid::nil(),
+        context: crate::app::door::context::DoorContext {
+            user_id: uuid::Uuid::nil(),
+            player_name: "Test".to_string(),
+            session_origin: crate::session_bootstrap::SessionOrigin::Native,
+        },
         host: "127.0.0.1".to_string(),
         port: 2327,
         secret: String::new(),

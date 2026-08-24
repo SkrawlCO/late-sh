@@ -4,8 +4,8 @@ use ratatui::layout::Rect;
 
 use super::proxy::{ProcessConfig, ProxyStatus, UsurperProcess};
 use crate::app::door::arcade::{ArcadeHandleService, HandleFlow, HandleKeyResult};
-use crate::render_signal::RenderSignal;
 use crate::app::door::context::DoorContext;
+use crate::render_signal::RenderSignal;
 
 // The launcher UI renders straight off the shared flow's status.
 pub use crate::app::door::arcade::HandleStatus;

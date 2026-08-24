@@ -261,7 +261,7 @@ fn the_xp_meter_stays_on_the_character_sheet_under_a_pile_of_titles() {
     view.xp_for_next = 400;
     view.titles = (0..30).map(|i| format!("Champion of Zone {i}")).collect();
 
-    let lines = super::sheet_derived(&view, ratatui::style::Color::White);
+    let lines = super::sheet_derived(&view, false, ratatui::style::Color::White);
     let text: Vec<String> = lines.iter().map(line_text).collect();
     let xp_row = text
         .iter()

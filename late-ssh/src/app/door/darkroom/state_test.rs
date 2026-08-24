@@ -82,7 +82,15 @@ async fn a_session_picks_up_its_save_and_offers_the_fire() {
     let user = create_test_user(&test_db.db, "darkroom-load").await;
     let svc = darkroom_service(&test_db.db);
 
-    let mut state = State::new(svc, user.id, Utc::now());
+    let mut state = State::new(
+        svc,
+        crate::app::door::context::DoorContext {
+            user_id: user.id,
+            player_name: "Test".to_string(),
+            session_origin: crate::session_bootstrap::SessionOrigin::Native,
+        },
+        Utc::now(),
+    );
     assert!(state.game().is_none(), "the load starts in flight");
     load_game(&mut state).await;
 
@@ -100,7 +108,15 @@ async fn winning_the_ascent_wipes_the_save_and_pays_the_badge() {
     let user = create_test_user(&test_db.db, "darkroom-ending").await;
     let svc = darkroom_service(&test_db.db);
 
-    let mut state = State::new(svc, user.id, Utc::now());
+    let mut state = State::new(
+        svc,
+        crate::app::door::context::DoorContext {
+            user_id: user.id,
+            player_name: "Test".to_string(),
+            session_origin: crate::session_bootstrap::SessionOrigin::Native,
+        },
+        Utc::now(),
+    );
     load_game(&mut state).await;
     // Lighting the fire is the first thing that writes a save, so there is
     // something for the ending to wipe.
@@ -210,7 +226,15 @@ async fn attacking_leaves_the_cursor_on_the_weapon_you_swung() {
     let user = create_test_user(&test_db.db, "darkroom-fight-cursor").await;
     let svc = darkroom_service(&test_db.db);
 
-    let mut state = State::new(svc, user.id, Utc::now());
+    let mut state = State::new(
+        svc,
+        crate::app::door::context::DoorContext {
+            user_id: user.id,
+            player_name: "Test".to_string(),
+            session_origin: crate::session_bootstrap::SessionOrigin::Native,
+        },
+        Utc::now(),
+    );
     load_game(&mut state).await;
 
     // Out in the wasteland carrying three weapons, so the row under the
@@ -269,7 +293,15 @@ async fn walking_into_a_new_scene_puts_the_cursor_back_at_the_top() {
     let user = create_test_user(&test_db.db, "darkroom-scene-cursor").await;
     let svc = darkroom_service(&test_db.db);
 
-    let mut state = State::new(svc, user.id, Utc::now());
+    let mut state = State::new(
+        svc,
+        crate::app::door::context::DoorContext {
+            user_id: user.id,
+            player_name: "Test".to_string(),
+            session_origin: crate::session_bootstrap::SessionOrigin::Native,
+        },
+        Utc::now(),
+    );
     load_game(&mut state).await;
     state.game_mut().expect("loaded").expedition = Some(Expedition {
         hp: 100,

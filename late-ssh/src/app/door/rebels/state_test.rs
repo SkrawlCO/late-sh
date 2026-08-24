@@ -51,7 +51,11 @@ fn arrow_key_csi_passes_through_untouched() {
 #[test]
 fn connect_is_a_no_op_when_disabled() {
     let mut state = State::new(
-        uuid::Uuid::nil(),
+        crate::app::door::context::DoorContext {
+            user_id: uuid::Uuid::nil(),
+            player_name: "Test".to_string(),
+            session_origin: crate::session_bootstrap::SessionOrigin::Native,
+        },
         "frittura.org".to_string(),
         3788,
         String::new(),

@@ -701,8 +701,8 @@ impl ClientHandler {
         let (input_tx, input_rx) = tokio::sync::mpsc::channel(INPUT_QUEUE_CAP);
         let mut app = crate::app::state::App::new(SessionConfig {
             // Terminal / layout
-            cols: cols,
-            rows: rows,
+            cols,
+            rows,
             term: term.to_string(),
             bbs_identity: (!self.bbs_identity.is_empty()).then(|| self.bbs_identity.clone()),
 

@@ -7,8 +7,8 @@ use super::proxy::{NethackProcess, ProcessConfig, ProxyStatus};
 use crate::app::activity::event::ActivityGame;
 use crate::app::activity::publisher::ActivityPublisher;
 use crate::app::door::arcade::{ArcadeHandleService, HandleFlow, HandleKeyResult};
-use crate::render_signal::RenderSignal;
 use crate::app::door::context::DoorContext;
+use crate::render_signal::RenderSignal;
 
 // The launcher UI renders straight off the shared flow's status.
 pub use crate::app::door::arcade::HandleStatus;

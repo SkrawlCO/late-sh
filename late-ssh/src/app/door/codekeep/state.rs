@@ -3,8 +3,8 @@ use std::sync::Arc;
 use ratatui::layout::Rect;
 
 use super::proxy::{CodekeepProcess, ProcessConfig, ProxyStatus};
-use crate::render_signal::RenderSignal;
 use crate::app::door::context::DoorContext;
+use crate::render_signal::RenderSignal;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mode {
