@@ -11,41 +11,9 @@ use crate::authz::Permissions;
 use crate::session::SessionMessage;
 use crate::state::State;
 
-/// Identity asserted by an upstream BBS gateway for this SSH session.
-///
-/// This is session-scoped metadata. It does not replace late.sh's own
-/// authenticated User identity.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct BbsIdentity {
-    pub user_id: Option<String>,
-    pub username: Option<String>,
-    pub display_name: Option<String>,
-}
+pub mod identity;
 
-impl BbsIdentity {
-    pub fn is_empty(&self) -> bool {
-        self.user_id.is_none() && self.username.is_none() && self.display_name.is_none()
-    }
-}
-
-/// Where this session identity originated.
-///
-/// Native late.sh sessions have no upstream identity.
-/// BBS sessions carry the identity asserted by the gateway.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SessionOrigin {
-    Native,
-    Bbs(BbsIdentity),
-}
-
-impl SessionOrigin {
-    pub fn provider(&self) -> &'static str {
-        match self {
-            SessionOrigin::Native => "late.sh",
-            SessionOrigin::Bbs(_) => "BinkTerm",
-        }
-    }
-}
+pub use identity::{BbsIdentity, SessionOrigin};
 
 pub struct SessionBootstrapInputs {
     pub user: User,
