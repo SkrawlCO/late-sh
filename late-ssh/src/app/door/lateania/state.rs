@@ -145,6 +145,7 @@ pub enum MapMode {
 }
 
 pub struct State {
+    context: DoorContext,
     user_id: Uuid,
     /// Session-scoped player-facing identity.
     ///
@@ -152,10 +153,6 @@ pub struct State {
     /// Character ownership and persistence remain keyed by `user_id`.
     player_name: String,
 
-    /// Origin of this session identity.
-    ///
-    /// This does not replace Lateania ownership identity (`user_id`).
-    session_origin: crate::session_bootstrap::SessionOrigin,
     session_id: Uuid,
     snapshot: MudSnapshot,
     svc: LateaniaService,
@@ -221,20 +218,9 @@ impl State {
         &self.player_name
     }
 
-    /// Origin of this Lateania session.
-    ///
-    /// Doors can make presentation decisions without knowing SSH bootstrap
-    /// implementation details.
-    pub fn session_origin(&self) -> &crate::session_bootstrap::SessionOrigin {
-        &self.session_origin
-    }
-
     /// True when this Lateania session was launched through an upstream BBS.
     pub fn bbs_mode(&self) -> bool {
-        matches!(
-            self.session_origin,
-            crate::session_bootstrap::SessionOrigin::Bbs(_)
-        )
+        self.context.bbs_mode()
     }
 
     pub fn new(
@@ -243,7 +229,6 @@ impl State {
     ) -> Self {
         let user_id = context.user_id;
         let player_name = context.player_name.clone();
-        let session_origin = context.session_origin.clone();
 
         let session_id = Uuid::now_v7();
         let join_requested_at = Instant::now();
@@ -255,9 +240,9 @@ impl State {
             .copied()
             .unwrap_or_default();
         let state = Self {
+            context,
             user_id,
             player_name,
-            session_origin,
             session_id,
             snapshot,
             svc,
