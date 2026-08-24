@@ -1868,8 +1868,14 @@ impl App {
         if self.bashquest_state.is_some() {
             return;
         }
+        let context = crate::app::door::context::DoorContext {
+            user_id: self.user_id,
+            player_name: self.effective_player_name().to_string(),
+            session_origin: self.session_origin(),
+        };
+
         self.bashquest_state = Some(crate::app::door::bashquest::state::State::new(
-            self.user_id,
+            context,
             self.bashquest_host.clone(),
             self.bashquest_port,
             self.bashquest_secret.clone(),
