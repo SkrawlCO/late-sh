@@ -84,11 +84,11 @@ async fn a_session_picks_up_its_save_and_offers_the_fire() {
 
     let mut state = State::new(
         svc,
-        crate::app::door::context::DoorContext {
-            user_id: user.id,
-            player_name: "Test".to_string(),
-            session_origin: crate::session_bootstrap::SessionOrigin::Native,
-        },
+        crate::app::door::context::DoorContext::new(
+            user.id,
+            "Test".to_string(),
+            crate::session_bootstrap::SessionOrigin::Native,
+        ),
         Utc::now(),
     );
     assert!(state.game().is_none(), "the load starts in flight");
@@ -110,11 +110,11 @@ async fn winning_the_ascent_wipes_the_save_and_pays_the_badge() {
 
     let mut state = State::new(
         svc,
-        crate::app::door::context::DoorContext {
-            user_id: user.id,
-            player_name: "Test".to_string(),
-            session_origin: crate::session_bootstrap::SessionOrigin::Native,
-        },
+        crate::app::door::context::DoorContext::new(
+            user.id,
+            "Test".to_string(),
+            crate::session_bootstrap::SessionOrigin::Native,
+        ),
         Utc::now(),
     );
     load_game(&mut state).await;
@@ -228,11 +228,11 @@ async fn attacking_leaves_the_cursor_on_the_weapon_you_swung() {
 
     let mut state = State::new(
         svc,
-        crate::app::door::context::DoorContext {
-            user_id: user.id,
-            player_name: "Test".to_string(),
-            session_origin: crate::session_bootstrap::SessionOrigin::Native,
-        },
+        crate::app::door::context::DoorContext::new(
+            user.id,
+            "Test".to_string(),
+            crate::session_bootstrap::SessionOrigin::Native,
+        ),
         Utc::now(),
     );
     load_game(&mut state).await;
@@ -295,11 +295,11 @@ async fn walking_into_a_new_scene_puts_the_cursor_back_at_the_top() {
 
     let mut state = State::new(
         svc,
-        crate::app::door::context::DoorContext {
-            user_id: user.id,
-            player_name: "Test".to_string(),
-            session_origin: crate::session_bootstrap::SessionOrigin::Native,
-        },
+        crate::app::door::context::DoorContext::new(
+            user.id,
+            "Test".to_string(),
+            crate::session_bootstrap::SessionOrigin::Native,
+        ),
         Utc::now(),
     );
     load_game(&mut state).await;

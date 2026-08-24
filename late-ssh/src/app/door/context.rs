@@ -10,11 +10,7 @@ pub struct DoorContext {
 
 impl DoorContext {
     /// Create a new door session identity context.
-    pub fn new(
-        user_id: Uuid,
-        player_name: String,
-        session_origin: SessionOrigin,
-    ) -> Self {
+    pub fn new(user_id: Uuid, player_name: String, session_origin: SessionOrigin) -> Self {
         Self {
             user_id,
             player_name,
@@ -29,10 +25,7 @@ impl DoorContext {
 
     /// True when this door session is a native late.sh session.
     pub fn native_mode(&self) -> bool {
-        matches!(
-            self.session_origin,
-            SessionOrigin::Native
-        )
+        matches!(self.session_origin, SessionOrigin::Native)
     }
 
     /// Identity provider that originated this session.
@@ -67,30 +60,29 @@ impl DoorContext {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::session_bootstrap::BbsIdentity;
 
     fn native_context() -> DoorContext {
-        DoorContext {
-            user_id: Uuid::nil(),
-            player_name: "Native Player".to_string(),
-            session_origin: SessionOrigin::Native,
-        }
+        DoorContext::new(
+            Uuid::nil(),
+            "Native Player".to_string(),
+            SessionOrigin::Native,
+        )
     }
 
     fn bbs_context() -> DoorContext {
-        DoorContext {
-            user_id: Uuid::nil(),
-            player_name: "BBS Player".to_string(),
-            session_origin: SessionOrigin::Bbs(BbsIdentity {
+        DoorContext::new(
+            Uuid::nil(),
+            "BBS Player".to_string(),
+            SessionOrigin::Bbs(BbsIdentity {
                 user_id: Some("42".to_string()),
                 username: Some("bbsuser".to_string()),
                 display_name: Some("BBS Player".to_string()),
             }),
-        }
+        )
     }
 
     #[test]

@@ -2,11 +2,11 @@ use super::*;
 
 fn disabled_state() -> State {
     State::new(
-        crate::app::door::context::DoorContext {
-            user_id: uuid::Uuid::nil(),
-            player_name: "Test".to_string(),
-            session_origin: crate::session_bootstrap::SessionOrigin::Native,
-        },
+        crate::app::door::context::DoorContext::new(
+            uuid::Uuid::nil(),
+            "Test".to_string(),
+            crate::session_bootstrap::SessionOrigin::Native,
+        ),
         "127.0.0.1".to_string(),
         2323,
         String::new(),
