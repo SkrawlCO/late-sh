@@ -3815,7 +3815,13 @@ fn draw_character_sheet(frame: &mut Frame, area: Rect, state: &State, view: &Pla
 
     frame.render_widget(
         Paragraph::new(clip_sheet_lines(
-            sheet_identity(state.player_name(), state.bbs_mode(), view, accent),
+            sheet_identity(
+                state.player_name(),
+                state.identity_provider(),
+                state.bbs_mode(),
+                view,
+                accent,
+            ),
             cols[0].width as usize,
         )),
         cols[0],
@@ -3877,6 +3883,7 @@ fn clip_sheet_line(line: Line<'static>, width: usize) -> Line<'static> {
 /// Left column: portrait, identity headline, and vitals as filled meters.
 fn sheet_identity(
     player_name: &str,
+    identity_provider: &str,
     bbs_mode: bool,
     view: &PlayerView,
     accent: Color,
@@ -3892,6 +3899,11 @@ fn sheet_identity(
         Style::default()
             .fg(theme::TEXT_BRIGHT())
             .add_modifier(Modifier::BOLD),
+    )));
+
+    lines.push(Line::from(Span::styled(
+        format!("via {}", identity_provider),
+        Style::default().fg(theme::TEXT_DIM()),
     )));
     lines.push(Line::from(Span::styled(
         format!("Lv {} {}", view.level, view.class_name),
