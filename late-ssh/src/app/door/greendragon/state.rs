@@ -576,8 +576,8 @@ impl State {
     /// load. `name` is the player's display name, used only if they have no
     /// save yet.
     pub fn new(svc: GreenDragonService, context: DoorContext) -> Self {
-        let user_id = context.user_id;
-        let name = context.player_name.clone();
+        let user_id = context.user_id();
+        let name = context.player_name().to_string();
 
         let load_rx = svc.load_character(user_id, name);
         State {

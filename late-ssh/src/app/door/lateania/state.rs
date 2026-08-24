@@ -224,8 +224,8 @@ impl State {
     }
 
     pub fn new(svc: LateaniaService, context: DoorContext) -> Self {
-        let user_id = context.user_id;
-        let player_name = context.player_name.clone();
+        let user_id = context.user_id();
+        let player_name = context.player_name().to_string();
 
         let session_id = Uuid::now_v7();
         let join_requested_at = Instant::now();

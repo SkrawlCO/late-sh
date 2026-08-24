@@ -71,7 +71,7 @@ impl State {
         handle_svc: Option<ArcadeHandleService>,
         awards: Option<BashquestAwards>,
     ) -> Self {
-        let user_id = context.user_id;
+        let user_id = context.user_id();
 
         Self {
             user_id,

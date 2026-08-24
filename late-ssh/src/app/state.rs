@@ -1016,11 +1016,11 @@ impl App {
     }
 
     pub(crate) fn door_context(&self) -> crate::app::door::context::DoorContext {
-        crate::app::door::context::DoorContext {
-            user_id: self.user_id,
-            player_name: self.effective_player_name().to_string(),
-            session_origin: self.session_origin(),
-        }
+        crate::app::door::context::DoorContext::new(
+            self.user_id,
+            self.effective_player_name().to_string(),
+            self.session_origin(),
+        )
     }
 
     pub fn new(config: SessionConfig) -> anyhow::Result<Self> {

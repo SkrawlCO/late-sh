@@ -41,7 +41,7 @@ impl State {
         enabled: bool,
         repaint: Option<Arc<RenderSignal>>,
     ) -> Self {
-        let user_id = context.user_id;
+        let user_id = context.user_id();
 
         Self {
             user_id,

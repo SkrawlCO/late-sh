@@ -3,12 +3,25 @@ use uuid::Uuid;
 
 #[derive(Clone, Debug)]
 pub struct DoorContext {
-    pub user_id: Uuid,
-    pub player_name: String,
-    pub session_origin: SessionOrigin,
+    user_id: Uuid,
+    player_name: String,
+    session_origin: SessionOrigin,
 }
 
 impl DoorContext {
+    /// Create a new door session identity context.
+    pub fn new(
+        user_id: Uuid,
+        player_name: String,
+        session_origin: SessionOrigin,
+    ) -> Self {
+        Self {
+            user_id,
+            player_name,
+            session_origin,
+        }
+    }
+
     /// True when this door session originated from an upstream BBS.
     pub fn bbs_mode(&self) -> bool {
         self.session_origin.is_bbs()
@@ -27,11 +40,21 @@ impl DoorContext {
         self.session_origin.provider()
     }
 
+    /// Stable late.sh user id for this door session.
+    pub fn user_id(&self) -> Uuid {
+        self.user_id
+    }
+
     /// Player-facing display name for this session.
     ///
     /// This is intentionally session scoped. Persistent ownership remains
     /// keyed by `user_id`.
     pub fn display_name(&self) -> &str {
+        &self.player_name
+    }
+
+    /// Original player name supplied to the door session.
+    pub fn player_name(&self) -> &str {
         &self.player_name
     }
 
