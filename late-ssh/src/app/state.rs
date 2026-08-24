@@ -1015,6 +1015,14 @@ impl App {
             .unwrap_or(&self.username)
     }
 
+    pub(crate) fn door_context(&self) -> crate::app::door::context::DoorContext {
+        crate::app::door::context::DoorContext {
+            user_id: self.user_id,
+            player_name: self.effective_player_name().to_string(),
+            session_origin: self.session_origin(),
+        }
+    }
+
     pub fn new(config: SessionConfig) -> anyhow::Result<Self> {
         let (cols, rows) = if config.cols == 0 || config.rows == 0 {
             tracing::warn!(
@@ -1637,11 +1645,7 @@ impl App {
         if self.lateania_state.is_some() {
             return;
         }
-        let context = crate::app::door::context::DoorContext {
-            user_id: self.user_id,
-            player_name: self.effective_player_name().to_string(),
-            session_origin: self.session_origin(),
-        };
+        let context = self.door_context();
 
         self.lateania_state = Some(crate::app::door::lateania::state::State::new(
             self.lateania_service.clone(),
@@ -1669,11 +1673,7 @@ impl App {
             return;
         }
 
-        let context = crate::app::door::context::DoorContext {
-            user_id: self.user_id,
-            player_name: self.effective_player_name().to_string(),
-            session_origin: self.session_origin(),
-        };
+        let context = self.door_context();
 
         self.greendragon_state = Some(crate::app::door::greendragon::state::State::new(
             self.greendragon_service.clone(),
@@ -1694,11 +1694,7 @@ impl App {
         // not when the door was opened.
         let session_start = chrono::Utc::now()
             - chrono::Duration::from_std(self.started_at.elapsed()).unwrap_or_default();
-        let context = crate::app::door::context::DoorContext {
-            user_id: self.user_id,
-            player_name: self.effective_player_name().to_string(),
-            session_origin: self.session_origin(),
-        };
+        let context = self.door_context();
 
         self.darkroom_state = Some(crate::app::door::darkroom::state::State::new(
             self.darkroom_service.clone(),
@@ -1724,11 +1720,7 @@ impl App {
         if self.rebels_state.is_some() {
             return;
         }
-        let context = crate::app::door::context::DoorContext {
-            user_id: self.user_id,
-            player_name: self.effective_player_name().to_string(),
-            session_origin: self.session_origin(),
-        };
+        let context = self.door_context();
 
         self.rebels_state = Some(crate::app::door::rebels::state::State::new(
             context,
@@ -1755,11 +1747,7 @@ impl App {
         if self.nethack_state.is_some() {
             return;
         }
-        let context = crate::app::door::context::DoorContext {
-            user_id: self.user_id,
-            player_name: self.effective_player_name().to_string(),
-            session_origin: self.session_origin(),
-        };
+        let context = self.door_context();
 
         self.nethack_state = Some(crate::app::door::nethack::state::State::new(
             context,
@@ -1785,11 +1773,7 @@ impl App {
         if self.dcss_state.is_some() {
             return;
         }
-        let context = crate::app::door::context::DoorContext {
-            user_id: self.user_id,
-            player_name: self.effective_player_name().to_string(),
-            session_origin: self.session_origin(),
-        };
+        let context = self.door_context();
 
         self.dcss_state = Some(crate::app::door::dcss::state::State::new(
             context,
@@ -1814,13 +1798,11 @@ impl App {
         if self.brogue_state.is_some() {
             return;
         }
+        let context = self.door_context();
+
         self.brogue_state = Some(crate::app::door::brogue::state::State::new(
             crate::app::door::brogue::state::StateConfig {
-                context: crate::app::door::context::DoorContext {
-                    user_id: self.user_id,
-                    player_name: self.effective_player_name().to_string(),
-                    session_origin: self.session_origin(),
-                },
+                context,
                 host: self.brogue_host.clone(),
                 port: self.brogue_port,
                 secret: self.brogue_secret.clone(),
@@ -1842,11 +1824,7 @@ impl App {
         if self.usurper_state.is_some() {
             return;
         }
-        let context = crate::app::door::context::DoorContext {
-            user_id: self.user_id,
-            player_name: self.effective_player_name().to_string(),
-            session_origin: self.session_origin(),
-        };
+        let context = self.door_context();
 
         self.usurper_state = Some(crate::app::door::usurper::state::State::new(
             context,
@@ -1870,11 +1848,7 @@ impl App {
         if self.dopewars_state.is_some() {
             return;
         }
-        let context = crate::app::door::context::DoorContext {
-            user_id: self.user_id,
-            player_name: self.effective_player_name().to_string(),
-            session_origin: self.session_origin(),
-        };
+        let context = self.door_context();
 
         self.dopewars_state = Some(crate::app::door::dopewars::state::State::new(
             context,
@@ -1896,11 +1870,7 @@ impl App {
         if self.bashquest_state.is_some() {
             return;
         }
-        let context = crate::app::door::context::DoorContext {
-            user_id: self.user_id,
-            player_name: self.effective_player_name().to_string(),
-            session_origin: self.session_origin(),
-        };
+        let context = self.door_context();
 
         self.bashquest_state = Some(crate::app::door::bashquest::state::State::new(
             context,
@@ -1926,11 +1896,7 @@ impl App {
         if self.codekeep_state.is_some() {
             return;
         }
-        let context = crate::app::door::context::DoorContext {
-            user_id: self.user_id,
-            player_name: self.effective_player_name().to_string(),
-            session_origin: self.session_origin(),
-        };
+        let context = self.door_context();
 
         self.codekeep_state = Some(crate::app::door::codekeep::state::State::new(
             context,
