@@ -8,6 +8,7 @@ use crate::app::activity::event::ActivityGame;
 use crate::app::activity::publisher::ActivityPublisher;
 use crate::app::door::arcade::{ArcadeHandleService, HandleFlow, HandleKeyResult};
 use crate::render_signal::RenderSignal;
+use crate::app::door::context::DoorContext;
 
 // The launcher UI renders straight off the shared flow's status.
 pub use crate::app::door::arcade::HandleStatus;
@@ -71,7 +72,7 @@ pub struct State {
 impl State {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        user_id: uuid::Uuid,
+        context: DoorContext,
         host: String,
         port: u16,
         secret: String,
@@ -82,6 +83,8 @@ impl State {
         handle_svc: Option<ArcadeHandleService>,
         rc: String,
     ) -> Self {
+        let user_id = context.user_id;
+
         Self {
             user_id,
             host,
