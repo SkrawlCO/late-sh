@@ -3814,22 +3814,78 @@ fn draw_character_sheet(frame: &mut Frame, area: Rect, state: &State, view: &Pla
     .split(inner);
 
     frame.render_widget(
-        Paragraph::new(sheet_identity(state.player_name(), view, accent)),
+        Paragraph::new(clip_sheet_lines(
+            sheet_identity(state.player_name(), state.bbs_mode(), view, accent),
+            cols[0].width as usize,
+        )),
         cols[0],
     );
+
+    // Let Ratatui wrap prose and hints to the actual runtime column width.
+    // The old renderer clipped every line first, which prevented natural
+    // wrapping and made the trait/control text appear truncated at 80 columns.
     frame.render_widget(
-        Paragraph::new(sheet_attributes(view, accent)).wrap(Wrap { trim: false }),
+        Paragraph::new(sheet_attributes(view, state.bbs_mode(), accent)).wrap(Wrap { trim: false }),
         cols[1],
     );
     frame.render_widget(
-        Paragraph::new(sheet_derived(view, accent)).wrap(Wrap { trim: false }),
+        Paragraph::new(sheet_derived(view, state.bbs_mode(), accent)).wrap(Wrap { trim: false }),
         cols[2],
     );
 }
 
+fn clip_sheet_lines(lines: Vec<Line<'static>>, width: usize) -> Vec<Line<'static>> {
+    if width == 0 {
+        return Vec::new();
+    }
+
+    lines
+        .into_iter()
+        .map(|line| clip_sheet_line(line, width))
+        .collect()
+}
+
+fn clip_sheet_line(line: Line<'static>, width: usize) -> Line<'static> {
+    let mut used = 0usize;
+    let mut spans = Vec::new();
+
+    for span in line.spans {
+        let mut text = String::new();
+
+        for ch in span.content.chars() {
+            let cw = UnicodeWidthChar::width(ch).unwrap_or(0);
+            if used + cw > width {
+                break;
+            }
+
+            text.push(ch);
+            used += cw;
+        }
+
+        if !text.is_empty() {
+            spans.push(Span::styled(text, span.style));
+        }
+
+        if used >= width {
+            break;
+        }
+    }
+
+    Line::from(spans)
+}
+
 /// Left column: portrait, identity headline, and vitals as filled meters.
-fn sheet_identity(player_name: &str, view: &PlayerView, accent: Color) -> Vec<Line<'static>> {
-    let mut lines = composed_portrait(&view.class_key, &view.appearance_idx, accent);
+fn sheet_identity(
+    player_name: &str,
+    bbs_mode: bool,
+    view: &PlayerView,
+    accent: Color,
+) -> Vec<Line<'static>> {
+    let mut lines = if bbs_mode {
+        bbs_safe_portrait(&view.class_key, &view.appearance_idx, accent)
+    } else {
+        composed_portrait(&view.class_key, &view.appearance_idx, accent)
+    };
     lines.push(Line::raw(""));
     lines.push(Line::from(Span::styled(
         player_name.to_string(),
@@ -3843,13 +3899,21 @@ fn sheet_identity(player_name: &str, view: &PlayerView, accent: Color) -> Vec<Li
     )));
     if let Some((name, role)) = &view.archetype {
         lines.push(Line::from(Span::styled(
-            format!("⟡ {name} · {role}"),
+            if bbs_mode {
+                format!("* {name} - {role}")
+            } else {
+                format!("⟡ {name} · {role}")
+            },
             Style::default().fg(accent).add_modifier(Modifier::BOLD),
         )));
     }
     if let Some(milestone) = super::classes::current_milestone(view.level) {
         lines.push(Line::from(Span::styled(
-            format!("✦ {milestone}"),
+            if bbs_mode {
+                format!("* {milestone}")
+            } else {
+                format!("✦ {milestone}")
+            },
             Style::default().fg(theme::AMBER_DIM()),
         )));
     }
@@ -3901,6 +3965,78 @@ fn sheet_identity(player_name: &str, view: &PlayerView, accent: Color) -> Vec<Li
 /// score's value coloured by tier plus its own 5-star rating; the `primary`
 /// score glows in the class `accent`. Shared by the character sheet and the
 /// creation screen so the rolled fate reads the same as the finished hero.
+/// BBS-safe attribute ratings for the full character sheet.
+///
+/// Native late.sh screens continue using `attribute_lines()` and Unicode
+/// stars. This renderer uses only ASCII `*` and `.` rating cells.
+fn attribute_lines_bbs(view: &PlayerView, primary: &str, accent: Color) -> Vec<Line<'static>> {
+    let rows = view.scores.rows();
+    let avg = if rows.is_empty() {
+        0
+    } else {
+        rows.iter().map(|(_, value, _)| *value).sum::<i32>() / rows.len() as i32
+    };
+
+    let mut lines = vec![section_stars_bbs("Attributes", avg, 18, accent)];
+
+    for (label, value, modifier) in rows {
+        let sign = if modifier >= 0 { "+" } else { "" };
+        let is_primary = label == primary;
+
+        let label_color = if is_primary {
+            accent
+        } else {
+            theme::TEXT_DIM()
+        };
+
+        let weight = if is_primary {
+            Modifier::BOLD
+        } else {
+            Modifier::empty()
+        };
+
+        let rating_color = if is_primary {
+            accent
+        } else {
+            tier_color(value, 18)
+        };
+
+        let mut spans = vec![
+            Span::styled(
+                format!("  {label} "),
+                Style::default().fg(label_color).add_modifier(weight),
+            ),
+            Span::styled(
+                format!("{value:>2}({sign}{modifier}) "),
+                Style::default().fg(tier_color(value, 18)),
+            ),
+        ];
+
+        spans.extend(star_rating_bbs(value, 18, rating_color));
+        lines.push(Line::from(spans));
+    }
+
+    lines
+}
+
+fn star_rating_bbs(value: i32, max: i32, color: Color) -> Vec<Span<'static>> {
+    const OF: i32 = 5;
+
+    let filled = if max <= 0 {
+        0
+    } else {
+        ((value.clamp(0, max) * OF + max / 2) / max).clamp(0, OF)
+    } as usize;
+
+    vec![
+        Span::styled("*".repeat(filled), Style::default().fg(color)),
+        Span::styled(
+            ".".repeat(OF as usize - filled),
+            Style::default().fg(theme::TEXT_FAINT()),
+        ),
+    ]
+}
+
 fn attribute_lines(view: &PlayerView, primary: &str, accent: Color) -> Vec<Line<'static>> {
     let rows = view.scores.rows();
     let avg = if rows.is_empty() {
@@ -3945,12 +4081,13 @@ fn attribute_lines(view: &PlayerView, primary: &str, accent: Color) -> Vec<Line<
     lines
 }
 
-fn sheet_attributes(view: &PlayerView, accent: Color) -> Vec<Line<'static>> {
-    let mut lines = attribute_lines(
-        view,
-        primary_label(Class::from_key(&view.class_key)),
-        accent,
-    );
+fn sheet_attributes(view: &PlayerView, bbs_mode: bool, accent: Color) -> Vec<Line<'static>> {
+    let primary = primary_label(Class::from_key(&view.class_key));
+    let mut lines = if bbs_mode {
+        attribute_lines_bbs(view, primary, accent)
+    } else {
+        attribute_lines(view, primary, accent)
+    };
     lines.push(Line::raw(""));
     lines.push(section("Trait"));
     lines.push(Line::from(Span::styled(
@@ -3959,9 +4096,21 @@ fn sheet_attributes(view: &PlayerView, accent: Color) -> Vec<Line<'static>> {
             .fg(theme::AMBER())
             .add_modifier(Modifier::BOLD),
     )));
-    lines.extend(wrap(&view.trait_desc, 24));
+    lines.push(Line::from(Span::styled(
+        format!("  {}", view.trait_desc),
+        Style::default().fg(theme::TEXT_DIM()),
+    )));
     lines.push(Line::raw(""));
+    let trades_start = lines.len();
     lines.extend(skills_block(view));
+    if bbs_mode && trades_start < lines.len() {
+        let avg = if view.skills.is_empty() {
+            0
+        } else {
+            view.skills.iter().map(|s| s.level).sum::<i32>() / view.skills.len() as i32
+        };
+        lines[trades_start] = section_stars_bbs("Trades", avg, 50, theme::AMBER());
+    }
     lines
 }
 
@@ -3974,10 +4123,14 @@ const SHEET_TITLES_SHOWN: usize = 4;
 /// Right column: combat numbers, revives, the XP meter, then earned titles.
 /// Experience comes first on purpose: it is the number you always want, and
 /// titles are the section that grows without limit.
-fn sheet_derived(view: &PlayerView, accent: Color) -> Vec<Line<'static>> {
+fn sheet_derived(view: &PlayerView, bbs_mode: bool, accent: Color) -> Vec<Line<'static>> {
     // Combat rated by level; attack reads as offence (green), armour as
     // defence (blue), split for clarity.
-    let mut lines = vec![section_stars("Combat", view.level, 50, accent)];
+    let mut lines = vec![if bbs_mode {
+        section_stars_bbs("Combat", view.level, 50, accent)
+    } else {
+        section_stars("Combat", view.level, 50, accent)
+    }];
     lines.push(stat_colored(
         "attack",
         format!("+{}", view.attack),
@@ -4037,7 +4190,9 @@ fn sheet_derived(view: &PlayerView, accent: Color) -> Vec<Line<'static>> {
         )));
     }
     lines.push(Line::raw(""));
-    lines.push(hint("c", "close  v abilities  t bag"));
+    lines.push(hint("c", "close"));
+    lines.push(hint("v", "abilities"));
+    lines.push(hint("t", "bag"));
     lines
 }
 
@@ -4136,6 +4291,32 @@ fn tier_color(value: i32, max: i32) -> Color {
     } else {
         theme::TEXT_DIM()
     }
+}
+
+/// BBS-safe version of a five-star section heading.
+///
+/// Uses only ASCII so terminal bridges that do not preserve Unicode do not
+/// display replacement question marks.
+fn section_stars_bbs(title: &str, value: i32, max: i32, accent: Color) -> Line<'static> {
+    const OF: i32 = 5;
+    let filled = if max <= 0 {
+        0
+    } else {
+        ((value.clamp(0, max) * OF + max / 2) / max).clamp(0, OF)
+    } as usize;
+
+    Line::from(vec![
+        Span::styled(" - ", Style::default().fg(theme::BORDER())),
+        Span::styled(
+            format!("{title} "),
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("*".repeat(filled), Style::default().fg(accent)),
+        Span::styled(
+            ".".repeat(OF as usize - filled),
+            Style::default().fg(theme::TEXT_FAINT()),
+        ),
+    ])
 }
 
 /// A section header carrying a 5-star rating, e.g. ` - Attributes ★★★☆☆`.
@@ -4356,7 +4537,121 @@ fn eye_tint(idx: u8) -> Color {
     }
 }
 
-/// A composed ASCII portrait bust built from the player's own appearance choices
+/// Conservative ASCII portrait for upstream BBS sessions.
+///
+/// Native late.sh clients keep the richer Unicode portrait. This path avoids
+/// glyphs that commonly degrade to `?` through BBS terminal bridges.
+fn bbs_safe_portrait(class_key: &str, sel: &[u8], accent: Color) -> Vec<Line<'static>> {
+    let mut idx = [0u8; appearance::N_FIELDS];
+    for (i, slot) in idx.iter_mut().enumerate() {
+        *slot = sel.get(i).copied().unwrap_or(0);
+    }
+
+    let class = Class::from_key(class_key);
+
+    let head = match class {
+        Some(Class::Warrior)
+        | Some(Class::Paladin)
+        | Some(Class::Berserker)
+        | Some(Class::Valewalker) => "  /=====\\  ",
+        Some(Class::Mage) | Some(Class::Cleric) | Some(Class::Runemaster) => "  .-----.  ",
+        Some(Class::Rogue)
+        | Some(Class::Necromancer)
+        | Some(Class::Warlock)
+        | Some(Class::Spiritmaster) => "  /-----\\  ",
+        Some(Class::Ranger) | Some(Class::Druid) | Some(Class::Beastlord) => "  ~~~~~~~  ",
+        _ => "  -------  ",
+    };
+
+    let hair = match idx[1] {
+        0 => "  \'\'\'\'\'\'\'  ",
+        1 => "  ///////  ",
+        2 => "  ^^^^^^^  ",
+        3 => "  -------  ",
+        4 => "           ",
+        5 => "  #######  ",
+        6 => "  ^^^^^^^  ",
+        7 => "  \'\'\'\'\'\'\'  ",
+        8 => "  \'\'\'\'\'\'\'  ",
+        9 => "  .......  ",
+        10 => "  @@@@@@@  ",
+        _ => "  [-----]  ",
+    };
+
+    let eyes = if idx[2] == 4 {
+        " | x o | "
+    } else {
+        " | o o | "
+    };
+
+    let mouth = match idx[3] {
+        1 | 7 => " |  ___  | ",
+        2 | 5 => " |  ---  | ",
+        9 | 11 => " |  _-_  | ",
+        3 => " |  ~~~  | ",
+        _ => " |  ---  | ",
+    };
+
+    let rows = [
+        head.to_string(),
+        hair.to_string(),
+        " /-------\\ ".to_string(),
+        eyes.to_string(),
+        " |   ^   | ".to_string(),
+        mouth.to_string(),
+        " \\_______/ ".to_string(),
+    ];
+
+    let hair_color = hair_tint(idx[1]);
+    let eye_color = eye_tint(idx[2]);
+
+    let mut lines = Vec::with_capacity(rows.len() + 1);
+    for (i, row) in rows.into_iter().enumerate() {
+        let (color, weight) = match i {
+            0 => (accent, Modifier::BOLD),
+            1 => (hair_color, Modifier::empty()),
+            3 => (eye_color, Modifier::BOLD),
+            _ => (theme::TEXT_BRIGHT(), Modifier::empty()),
+        };
+
+        lines.push(Line::from(Span::styled(
+            row,
+            Style::default().fg(color).add_modifier(weight),
+        )));
+    }
+
+    lines.push(Line::from(Span::styled(
+        format!(" {}", class_emblem_ascii(class)),
+        Style::default().fg(accent).add_modifier(Modifier::BOLD),
+    )));
+
+    lines
+}
+
+fn class_emblem_ascii(class: Option<Class>) -> &'static str {
+    match class {
+        Some(Class::Warrior) => "[W] Warrior",
+        Some(Class::Mage) => "[M] Mage",
+        Some(Class::Cleric) => "[C] Cleric",
+        Some(Class::Rogue) => "[R] Rogue",
+        Some(Class::Ranger) => "[R] Ranger",
+        Some(Class::Druid) => "[D] Druid",
+        Some(Class::Necromancer) => "[N] Necromancer",
+        Some(Class::Bard) => "[B] Bard",
+        Some(Class::Monk) => "[M] Monk",
+        Some(Class::Paladin) => "[P] Paladin",
+        Some(Class::Warlock) => "[W] Warlock",
+        Some(Class::Berserker) => "[B] Berserker",
+        Some(Class::Beastlord) => "[B] Beastlord",
+        Some(Class::Skald) => "[S] Skald",
+        Some(Class::Runemaster) => "[R] Runemaster",
+        Some(Class::Valewalker) => "[V] Valewalker",
+        Some(Class::Spiritmaster) => "[S] Spiritmaster",
+        None => "[?] Adventurer",
+    }
+}
+
+/// A composed portrait bust built from the player's own appearance choices
 /// (build/hair/eyes/bearing) plus a class-flavoured headpiece, tinted with the
 /// class accent and per-feature colours. Falls back cleanly when indices are
 /// missing (old/absent selections). The class emblem is shown below the bust.
