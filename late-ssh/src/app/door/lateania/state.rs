@@ -150,13 +150,10 @@ pub struct State {
     /// Character ownership and persistence remain keyed by `user_id`.
     player_name: String,
 
-    /// Identity asserted by an upstream BBS gateway for this session.
+    /// Origin of this session identity.
     ///
     /// This does not replace Lateania ownership identity (`user_id`).
-    bbs_identity: Option<crate::session_bootstrap::BbsIdentity>,
-
-    /// Conservative terminal presentation for sessions launched by a BBS.
-    bbs_mode: bool,
+    session_origin: crate::session_bootstrap::SessionOrigin,
     session_id: Uuid,
     snapshot: MudSnapshot,
     svc: LateaniaService,
@@ -222,25 +219,28 @@ impl State {
         &self.player_name
     }
 
-    /// True when this Lateania session was launched through an upstream BBS.
+    /// Origin of this Lateania session.
     ///
-    /// BBS sessions may need a more conservative terminal presentation than
-    /// native late.sh SSH clients while sharing the same game state.
-    pub fn bbs_mode(&self) -> bool {
-        self.bbs_mode
+    /// Doors can make presentation decisions without knowing SSH bootstrap
+    /// implementation details.
+    pub fn session_origin(&self) -> &crate::session_bootstrap::SessionOrigin {
+        &self.session_origin
     }
 
-    pub fn bbs_identity(&self) -> Option<&crate::session_bootstrap::BbsIdentity> {
-        self.bbs_identity.as_ref()
+    /// True when this Lateania session was launched through an upstream BBS.
+    pub fn bbs_mode(&self) -> bool {
+        matches!(
+            self.session_origin,
+            crate::session_bootstrap::SessionOrigin::Bbs(_)
+        )
     }
 
     pub fn new(
         svc: LateaniaService,
         user_id: Uuid,
         player_name: String,
-        bbs_identity: Option<crate::session_bootstrap::BbsIdentity>,
+        session_origin: crate::session_bootstrap::SessionOrigin,
     ) -> Self {
-        let bbs_mode = bbs_identity.is_some();
         let session_id = Uuid::now_v7();
         let join_requested_at = Instant::now();
         let snapshot_rx = svc.subscribe_state();
@@ -253,8 +253,7 @@ impl State {
         let state = Self {
             user_id,
             player_name,
-            bbs_identity,
-            bbs_mode,
+            session_origin,
             session_id,
             snapshot,
             svc,
