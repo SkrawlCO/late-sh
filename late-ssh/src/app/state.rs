@@ -1627,11 +1627,13 @@ impl App {
             return;
         }
         let player_name = self.effective_player_name().to_string();
+        let bbs_identity = self.bbs_identity.clone();
 
         self.lateania_state = Some(crate::app::door::lateania::state::State::new(
             self.lateania_service.clone(),
             self.user_id,
             player_name,
+            bbs_identity,
         ));
     }
 
