@@ -182,6 +182,8 @@ pub struct SessionConfig {
     pub cols: u16,
     pub rows: u16,
     pub term: String,
+    /// Optional identity asserted by an upstream BBS gateway.
+    pub bbs_identity: Option<crate::session_bootstrap::BbsIdentity>,
 
     /// Services / data sources
     pub audio_service: crate::app::audio::svc::AudioService,
@@ -451,6 +453,10 @@ pub struct App {
     /// Public site base (`Config::web_url`), no trailing slash. Profile links and
     /// the listen-page URL in the guide are built from it.
     pub(super) web_url: String,
+    /// Optional identity asserted by an upstream BBS gateway for this session.
+    ///
+    /// This is distinct from late.sh's authenticated `user_id` / username.
+    pub(crate) bbs_identity: Option<crate::session_bootstrap::BbsIdentity>,
     pub(super) session_registry: Option<SessionRegistry>,
     pub(super) paired_client_registry: Option<PairedClientRegistry>,
     pub(super) session_token: String,
@@ -973,6 +979,13 @@ impl App {
         self.splash_hint = hint.into();
     }
 
+    /// Identity supplied by an upstream BBS gateway for this session.
+    ///
+    /// This is separate from late.sh's authenticated account identity.
+    pub fn bbs_identity(&self) -> Option<&crate::session_bootstrap::BbsIdentity> {
+        self.bbs_identity.as_ref()
+    }
+
     pub fn new(config: SessionConfig) -> anyhow::Result<Self> {
         let (cols, rows) = if config.cols == 0 || config.rows == 0 {
             tracing::warn!(
@@ -1289,6 +1302,7 @@ impl App {
             terminal,
             shared,
             web_url: config.web_url.trim_end_matches('/').to_string(),
+            bbs_identity: config.bbs_identity,
             session_registry: config.session_registry,
             paired_client_registry: config.paired_client_registry,
             session_token: config.session_token.clone(),

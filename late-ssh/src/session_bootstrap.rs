@@ -11,6 +11,23 @@ use crate::authz::Permissions;
 use crate::session::SessionMessage;
 use crate::state::State;
 
+/// Identity asserted by an upstream BBS gateway for this SSH session.
+///
+/// This is session-scoped metadata. It does not replace late.sh's own
+/// authenticated User identity.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BbsIdentity {
+    pub user_id: Option<String>,
+    pub username: Option<String>,
+    pub display_name: Option<String>,
+}
+
+impl BbsIdentity {
+    pub fn is_empty(&self) -> bool {
+        self.user_id.is_none() && self.username.is_none() && self.display_name.is_none()
+    }
+}
+
 pub struct SessionBootstrapInputs {
     pub user: User,
     pub is_new_user: bool,
@@ -23,6 +40,8 @@ pub struct SessionBootstrapInputs {
     /// Fingerprint of the SSH key this session authenticated with, for
     /// per-device settings. `None` for sessions without a key of their own.
     pub key_fingerprint: Option<String>,
+    /// Optional identity supplied by an upstream BBS integration.
+    pub bbs_identity: Option<BbsIdentity>,
 }
 
 pub struct ArcadeSessionPreloads {
@@ -266,6 +285,7 @@ pub async fn build_session_config(state: &State, inputs: SessionBootstrapInputs)
         session_rx,
         activity_feed_rx,
         key_fingerprint,
+        bbs_identity,
     } = inputs;
 
     let user_id = user.id;
@@ -390,6 +410,7 @@ pub async fn build_session_config(state: &State, inputs: SessionBootstrapInputs)
         cols,
         rows,
         term,
+        bbs_identity,
         key_fingerprint,
         key_layout,
         audio_service: state.audio_service.clone(),
@@ -535,5 +556,29 @@ pub async fn build_session_config(state: &State, inputs: SessionBootstrapInputs)
         initial_icecast_stream: late_core::models::user::extract_icecast_stream(&user.settings),
         initial_radio_station: late_core::models::user::extract_radio_station(&user.settings),
         is_draining: state.is_draining.clone(),
+    }
+}
+
+#[cfg(test)]
+mod bbs_identity_tests {
+    use super::BbsIdentity;
+
+    #[test]
+    fn empty_bbs_identity_is_empty() {
+        assert!(BbsIdentity::default().is_empty());
+    }
+
+    #[test]
+    fn populated_bbs_identity_is_not_empty() {
+        let identity = BbsIdentity {
+            user_id: Some("42".to_string()),
+            username: Some("Skrawl".to_string()),
+            display_name: Some("Skrawl".to_string()),
+        };
+
+        assert!(!identity.is_empty());
+        assert_eq!(identity.user_id.as_deref(), Some("42"));
+        assert_eq!(identity.username.as_deref(), Some("Skrawl"));
+        assert_eq!(identity.display_name.as_deref(), Some("Skrawl"));
     }
 }

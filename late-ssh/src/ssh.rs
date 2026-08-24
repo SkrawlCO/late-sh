@@ -33,7 +33,7 @@ use crate::authz::Permissions as AuthzPermissions;
 use crate::metrics;
 use crate::proxy_protocol;
 use crate::render_signal::RenderSignal;
-use crate::session_bootstrap::{ArcadeSessionPreloads, load_arcade_session_preloads};
+use crate::session_bootstrap::{ArcadeSessionPreloads, BbsIdentity, load_arcade_session_preloads};
 use crate::state::{ActiveSession, State};
 use crate::terminal_size::clamp_terminal_size;
 use crate::usernames;
@@ -147,6 +147,8 @@ struct ClientHandler {
     terminal_env_hints: Vec<(String, String)>,
     /// Optional direct-launch target supplied by an SSH environment request.
     launch_target: Option<String>,
+    /// Optional identity asserted by the upstream BinkTerm BBS session.
+    bbs_identity: BbsIdentity,
     session_token: Option<String>,
     session_rx: Option<tokio::sync::mpsc::Receiver<crate::session::SessionMessage>>,
 }
@@ -351,6 +353,7 @@ impl Server {
             cli_mode: false,
             terminal_env_hints: Vec::new(),
             launch_target: None,
+            bbs_identity: BbsIdentity::default(),
             session_token: None,
             session_rx: None,
         }
@@ -507,10 +510,7 @@ impl ClientHandler {
 }
 
 impl ClientHandler {
-    fn launch_direct_experience(
-        app: &mut crate::app::state::App,
-        target: &str,
-    ) {
+    fn launch_direct_experience(app: &mut crate::app::state::App, target: &str) {
         use crate::app::common::primitives::Screen;
 
         match target {
@@ -885,6 +885,7 @@ impl russh::server::Handler for ClientHandler {
             cols: terminal_size.cols,
             rows: terminal_size.rows,
             term: term.to_string(),
+            bbs_identity: (!self.bbs_identity.is_empty()).then(|| self.bbs_identity.clone()),
 
             // Services / data sources
             audio_service: self.state.audio_service.clone(),
@@ -1090,6 +1091,25 @@ impl russh::server::Handler for ClientHandler {
                 launch_target = ?self.launch_target,
                 "updated direct launch target from env request"
             );
+        } else if matches!(
+            variable_name,
+            "BINKTERM_USER_ID" | "BINKTERM_USERNAME" | "BINKTERM_DISPLAY_NAME"
+        ) {
+            let value = variable_value.trim();
+            let value = (!value.is_empty()).then(|| value.to_string());
+
+            match variable_name {
+                "BINKTERM_USER_ID" => self.bbs_identity.user_id = value,
+                "BINKTERM_USERNAME" => self.bbs_identity.username = value,
+                "BINKTERM_DISPLAY_NAME" => self.bbs_identity.display_name = value,
+                _ => unreachable!("BinkTerm env name was matched above"),
+            }
+
+            tracing::debug!(
+                variable_name,
+                identity_present = !self.bbs_identity.is_empty(),
+                "updated BinkTerm identity from env request"
+            );
         } else if crate::app::files::terminal_image::protocol_from_env_hint(
             variable_name,
             variable_value,
@@ -1197,8 +1217,7 @@ impl russh::server::Handler for ClientHandler {
             // Direct-launch sessions bypass clubhouse onboarding for this
             // connection only. Do not persist tutorial completion: a normal
             // late.sh login should still offer the user's unfinished tour.
-            app.clubhouse.tutorial =
-                crate::app::clubhouse::state::Tutorial::Off;
+            app.clubhouse.tutorial = crate::app::clubhouse::state::Tutorial::Off;
 
             Self::launch_direct_experience(&mut app, target);
         }

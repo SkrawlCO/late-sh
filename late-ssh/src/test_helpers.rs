@@ -455,6 +455,7 @@ fn make_app_with_chat_service_and_permissions(
         cols: 100,
         rows: 32,
         term: "xterm-256color".to_string(),
+        bbs_identity: None,
         audio_service: crate::app::audio::svc::AudioService::new(
             db.clone(),
             None,
@@ -669,6 +670,7 @@ pub fn make_app_with_paired_client(
         cols: 100,
         rows: 32,
         term: "xterm-256color".to_string(),
+        bbs_identity: None,
         audio_service: crate::app::audio::svc::AudioService::new(
             db.clone(),
             None,
