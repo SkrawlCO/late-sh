@@ -506,6 +506,29 @@ impl ClientHandler {
     }
 }
 
+impl ClientHandler {
+    fn launch_direct_experience(
+        app: &mut crate::app::state::App,
+        target: &str,
+    ) {
+        use crate::app::common::primitives::Screen;
+
+        match target {
+            "lateania" => {
+                app.set_screen(Screen::Lateania);
+                app.lateania_service
+                    .select_slot(app.user_id, app.lateania_slot_cursor as i16);
+                app.enter_lateania();
+            }
+            "greendragon" => {
+                app.set_screen(Screen::GreenDragon);
+                app.enter_greendragon();
+            }
+            _ => unreachable!("launch target was validated in env_request"),
+        }
+    }
+}
+
 impl russh::server::Handler for ClientHandler {
     type Error = anyhow::Error;
 
@@ -1052,7 +1075,7 @@ impl russh::server::Handler for ClientHandler {
             let target = variable_value.trim().to_ascii_lowercase();
 
             self.launch_target = match target.as_str() {
-                "lateania" => Some(target),
+                "lateania" | "greendragon" => Some(target),
                 "" => None,
                 _ => {
                     tracing::warn!(
@@ -1152,16 +1175,22 @@ impl russh::server::Handler for ClientHandler {
     ) -> Result<(), Self::Error> {
         tracing::debug!("shell requested");
 
-        if self.launch_target.as_deref() == Some("lateania") {
+        if let Some(target) = self.launch_target.as_deref() {
             let Some(app) = self.app.as_ref() else {
-                tracing::error!("Lateania direct launch requested before app initialization");
+                tracing::error!(
+                    launch_target = %target,
+                    "direct launch requested before app initialization"
+                );
                 if let Err(e) = session.channel_failure(channel) {
                     tracing::error!(error = ?e, "direct launch channel_failure failed");
                 }
                 return Ok(());
             };
 
-            tracing::info!("starting interactive shell directly in Lateania");
+            tracing::info!(
+                launch_target = %target,
+                "starting interactive shell with direct launch"
+            );
 
             let mut app = app.lock().await;
 
@@ -1171,10 +1200,7 @@ impl russh::server::Handler for ClientHandler {
             app.clubhouse.tutorial =
                 crate::app::clubhouse::state::Tutorial::Off;
 
-            app.set_screen(crate::app::common::primitives::Screen::Lateania);
-            app.lateania_service
-                .select_slot(app.user_id, app.lateania_slot_cursor as i16);
-            app.enter_lateania();
+            Self::launch_direct_experience(&mut app, target);
         }
 
         match session.channel_success(channel) {
