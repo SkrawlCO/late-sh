@@ -4,6 +4,7 @@ pub mod arcade;
 pub mod bashquest;
 pub mod brogue;
 pub mod codekeep;
+pub mod context;
 pub mod darkroom;
 pub mod dcss;
 pub mod dopewars;

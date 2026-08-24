@@ -13,6 +13,8 @@ use ratatui::layout::Rect;
 use tokio::sync::watch;
 use uuid::Uuid;
 
+use crate::app::door::context::DoorContext;
+
 use super::classes::Class;
 use super::svc::{LateaniaService, MudSnapshot, PlayerView, empty_player_view};
 use super::world::Dir;
@@ -237,10 +239,12 @@ impl State {
 
     pub fn new(
         svc: LateaniaService,
-        user_id: Uuid,
-        player_name: String,
-        session_origin: crate::session_bootstrap::SessionOrigin,
+        context: DoorContext,
     ) -> Self {
+        let user_id = context.user_id;
+        let player_name = context.player_name.clone();
+        let session_origin = context.session_origin.clone();
+
         let session_id = Uuid::now_v7();
         let join_requested_at = Instant::now();
         let snapshot_rx = svc.subscribe_state();

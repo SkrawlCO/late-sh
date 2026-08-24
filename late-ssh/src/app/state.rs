@@ -1637,14 +1637,15 @@ impl App {
         if self.lateania_state.is_some() {
             return;
         }
-        let player_name = self.effective_player_name().to_string();
-        let session_origin = self.session_origin();
+        let context = crate::app::door::context::DoorContext {
+            user_id: self.user_id,
+            player_name: self.effective_player_name().to_string(),
+            session_origin: self.session_origin(),
+        };
 
         self.lateania_state = Some(crate::app::door::lateania::state::State::new(
             self.lateania_service.clone(),
-            self.user_id,
-            player_name,
-            session_origin,
+            context,
         ));
     }
 
