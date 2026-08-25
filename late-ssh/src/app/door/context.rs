@@ -1,6 +1,19 @@
 use crate::session_bootstrap::SessionOrigin;
 use uuid::Uuid;
 
+/// Identity presented to a door for the current session.
+///
+/// `user_id` is always the authoritative late.sh account identity used for
+/// ownership and persistence. Provider and external identity describe where
+/// the session originated without exposing transport-specific details.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DoorIdentity<'a> {
+    pub user_id: Uuid,
+    pub display_name: &'a str,
+    pub provider: &'static str,
+    pub external_identity: Option<&'a str>,
+}
+
 #[derive(Clone, Debug)]
 pub struct DoorContext {
     user_id: Uuid,
@@ -15,6 +28,22 @@ impl DoorContext {
             user_id,
             player_name,
             session_origin,
+        }
+    }
+
+    /// Unified identity view for this door session.
+    ///
+    /// Doors consume identity through this API without needing to know how the
+    /// session was authenticated or which transport supplied external identity.
+    pub fn identity(&self) -> DoorIdentity<'_> {
+        DoorIdentity {
+            user_id: self.user_id,
+            display_name: &self.player_name,
+            provider: self.session_origin.provider(),
+            external_identity: match &self.session_origin {
+                SessionOrigin::Native => None,
+                SessionOrigin::Bbs(identity) => identity.stable_key(),
+            },
         }
     }
 
@@ -97,6 +126,17 @@ mod tests {
     }
 
     #[test]
+    fn native_identity_view_is_transport_neutral() {
+        let context = native_context();
+        let identity = context.identity();
+
+        assert_eq!(identity.user_id, Uuid::nil());
+        assert_eq!(identity.display_name, "Native Player");
+        assert_eq!(identity.provider, "late.sh");
+        assert_eq!(identity.external_identity, None);
+    }
+
+    #[test]
     fn bbs_identity_helpers_work() {
         let context = bbs_context();
 
@@ -107,5 +147,16 @@ mod tests {
 
         let identity = context.bbs_identity().expect("BBS identity missing");
         assert_eq!(identity.user_id.as_deref(), Some("42"));
+    }
+
+    #[test]
+    fn bbs_identity_view_exposes_stable_external_identity() {
+        let context = bbs_context();
+        let identity = context.identity();
+
+        assert_eq!(identity.user_id, Uuid::nil());
+        assert_eq!(identity.display_name, "BBS Player");
+        assert_eq!(identity.provider, "BinkTerm");
+        assert_eq!(identity.external_identity, Some("42"));
     }
 }
