@@ -74,7 +74,7 @@ impl State {
         handle_svc: Option<ArcadeHandleService>,
         rc: String,
     ) -> Self {
-        let user_id = context.user_id();
+        let user_id = context.identity().user_id;
 
         Self {
             host,

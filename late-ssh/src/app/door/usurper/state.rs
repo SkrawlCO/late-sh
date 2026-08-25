@@ -60,7 +60,7 @@ impl State {
         repaint: Option<Arc<RenderSignal>>,
         handle_svc: Option<ArcadeHandleService>,
     ) -> Self {
-        let user_id = context.user_id();
+        let user_id = context.identity().user_id;
 
         Self {
             host,

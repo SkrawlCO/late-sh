@@ -225,12 +225,13 @@ impl State {
 
     /// Identity provider that launched this Lateania session.
     pub fn identity_provider(&self) -> &'static str {
-        self.context.provider()
+        self.context.identity().provider
     }
 
     pub fn new(svc: LateaniaService, context: DoorContext) -> Self {
-        let user_id = context.user_id();
-        let player_name = context.player_name().to_string();
+        let identity = context.identity();
+        let user_id = identity.user_id;
+        let player_name = identity.display_name.to_string();
 
         let session_id = Uuid::now_v7();
         let join_requested_at = Instant::now();

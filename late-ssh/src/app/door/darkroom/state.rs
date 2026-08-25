@@ -263,7 +263,7 @@ pub struct State {
 
 impl State {
     pub fn new(svc: DarkroomService, context: DoorContext, session_start: DateTime<Utc>) -> Self {
-        let user_id = context.user_id();
+        let user_id = context.identity().user_id;
         let load = svc.load_game(user_id);
         let mut rng = rand::thread_rng();
         Self {

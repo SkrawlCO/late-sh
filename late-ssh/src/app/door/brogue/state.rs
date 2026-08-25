@@ -88,7 +88,7 @@ impl State {
             term: cfg.term,
             // A disabled door never looks the handle up.
             handle: HandleFlow::new(
-                cfg.context.user_id(),
+                cfg.context.identity().user_id,
                 if cfg.enabled { cfg.handle_svc } else { None },
                 cfg.repaint.clone(),
             ),
